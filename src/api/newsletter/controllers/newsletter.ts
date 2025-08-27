@@ -85,4 +85,46 @@ export default factories.createCoreController('api::newsletter.newsletter', ({ s
       return ctx.internalServerError('Failed to process subscription. Please try again later.');
     }
   },
+  
+  // Update newsletter status and sentAt safely via entityService
+  async updateStatus(ctx) {
+    try {
+      const { id } = ctx.params as { id: string };
+      const { status } = ctx.request.body as { status: 'draft' | 'sent' };
+
+      if (!id) {
+        return ctx.badRequest('Missing newsletter id');
+      }
+      if (!status || (status !== 'draft' && status !== 'sent')) {
+        return ctx.badRequest('Invalid status');
+      }
+
+      // Ensure entity exists
+      const existing = await strapi.entityService.findOne('api::newsletter.newsletter', Number(id), {
+        fields: ['id', 'docStatus', 'sentAt']
+      });
+      if (!existing) {
+        return ctx.notFound('Newsletter not found');
+      }
+
+      const updated = await strapi.entityService.update('api::newsletter.newsletter', Number(id), {
+        data: {
+          docStatus: status,
+          sentAt: status === 'sent' ? new Date() : null,
+        }
+      });
+
+      return ctx.send({
+        message: 'Status updated',
+        data: {
+          id: updated.id,
+          docStatus: updated.docStatus,
+          sentAt: updated.sentAt,
+        }
+      });
+    } catch (error) {
+      console.error('Update newsletter status error:', error);
+      return ctx.internalServerError('Failed to update status');
+    }
+  },
 }));

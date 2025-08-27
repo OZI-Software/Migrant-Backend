@@ -14,5 +14,15 @@ export default {
         middlewares: [],
       },
     },
+    {
+      method: 'PUT',
+      path: '/newsletter/:id/status',
+      handler: 'api::newsletter.newsletter.updateStatus',
+      config: {
+        auth: false,
+        policies: [],
+        middlewares: [],
+      },
+    },
   ],
 };

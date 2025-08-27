@@ -226,10 +226,13 @@ const NewsletterApp: React.FC = () => {
       setResult({ type: 'error', message: 'Please fill subject and content' });
       return;
     }
+    if (!selectedNewsletter) {
+      setResult({ type: 'error', message: 'Please select a newsletter to send.' });
+      return;
+    }
 
     setLoading(true);
     try {
-      // Use the email-news API endpoint to send to all subscribers
       const response = await post('/api/email-news/send-newsletter', {
         subject: subject,
         htmlContent: `
@@ -261,42 +264,42 @@ const NewsletterApp: React.FC = () => {
             </body>
           </html>
         `
-      });
-      const successResult: MessageResult = { type: 'success', message: 'Newsletter sent successfully!', success: true };
-      setResult(successResult);
-      
-      // Update newsletter status to 'sent' if successful
-      if (selectedNewsletter) {
-        try {
-          await updateNewsletterStatus(selectedNewsletter, 'sent');
-          console.log('Newsletter status updated successfully');
-        } catch (statusError) {
-          console.error('Failed to update newsletter status:', statusError);
-          // Don't fail the entire operation if status update fails
-        }
-        loadNewsletters(); // Refresh the list regardless
-      }
-    } catch (error) {
-      setResult({ type: 'error', message: error instanceof Error ? error.message : 'An error occurred' });
-    }
-    setLoading(false);
-  };
+    });
+    setResult({ type: 'success', message: 'Newsletter sent successfully!', success: true });
 
-  const updateNewsletterStatus = async (newsletterId: string, status: 'draft' | 'sent'): Promise<void> => {
+    // Update newsletter status to 'sent' and sentAt if successful
     try {
-      console.log('Updating newsletter status:', { newsletterId, status });
-      const response = await put(`/content-manager/collection-types/api::newsletter.newsletter/${newsletterId}`, {
-        data: {
-          docStatus: status,
-          sentAt: status === 'sent' ? new Date().toISOString() : null
-        }
-      });
-      console.log('Newsletter status update response:', response);
-    } catch (error) {
-      console.error('Error updating newsletter status:', error);
-      throw error; // Re-throw to handle in calling function
+      await updateNewsletterStatus(Number(selectedNewsletter), 'sent'); // <-- FIX: convert to number
+      console.log('Newsletter status updated successfully');
+    } catch (statusError) {
+      console.error('Failed to update newsletter status:', statusError);
+      setResult({ type: 'error', message: 'Newsletter sent, but failed to update status.' });
     }
-  };
+    await loadNewsletters();
+    // Clear inputs after successful send
+    setSubject('');
+    setContent('');
+  } catch (error) {
+    setResult({ type: 'error', message: error instanceof Error ? error.message : 'An error occurred' });
+  }
+  setLoading(false);
+};
+
+const updateNewsletterStatus = async (newsletterId: number, status: 'draft' | 'sent'): Promise<void> => {
+  try {
+    console.log('Updating newsletter status:', { newsletterId, status });
+    // Call custom API to update status to avoid Content Manager 404s
+    const url = `/api/newsletter/${newsletterId}/status`;
+    const response = await put(url, { status });
+    console.log('Newsletter status update response:', response);
+    if (!response || (response as any)?.status >= 400) {
+      throw new Error('Failed to update newsletter status: ' + ((response as any)?.statusText || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('Error updating newsletter status:', error);
+    throw error;
+  }
+};
 
   return (
     <Main>
