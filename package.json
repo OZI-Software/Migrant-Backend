@@ -17,6 +17,7 @@
   "dependencies": {
     "@getbrevo/brevo": "^3.0.1",
     "@strapi/plugin-cloud": "5.23.0",
+    "@strapi/plugin-documentation": "^5.23.2",
     "@strapi/plugin-users-permissions": "5.23.0",
     "@strapi/strapi": "5.23.0",
     "better-sqlite3": "11.3.0",

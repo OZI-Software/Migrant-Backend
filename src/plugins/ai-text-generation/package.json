@@ -1,0 +1,39 @@
+{
+  "name": "ai-text-generation",
+  "version": "0.1.0",
+  "description": "AI-powered text generation plugin for Strapi",
+  "strapi": {
+    "name": "ai-text-generation",
+    "description": "Generate AI-powered text content using OpenAI",
+    "kind": "plugin",
+    "displayName": "AI Text Generation"
+  },
+  "dependencies": {
+    "@strapi/design-system": "^1.6.3",
+    "@strapi/helper-plugin": "^4.6.0",
+    "@strapi/icons": "^1.6.3",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "react-intl": "^6.4.1"
+  },
+  "devDependencies": {
+    "@strapi/typescript-utils": "^4.6.0",
+    "typescript": "5.0.4"
+  },
+  "peerDependencies": {
+    "@strapi/strapi": "^4.6.0"
+  },
+  "author": {
+    "name": "Strapi Solutions"
+  },
+  "maintainers": [
+    {
+      "name": "Strapi Solutions"
+    }
+  ],
+  "engines": {
+    "node": ">=16.0.0 <=20.x.x",
+    "npm": ">=6.0.0"
+  },
+  "license": "MIT"
+}
