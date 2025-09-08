@@ -3,7 +3,7 @@ module.exports = ({ env }) => ({
     settings: {
       cors: {
         enabled: true,
-        origin: ['https://your-production-domain.com', 'https://admin.your-domain.com'],
+        origin: ['https://migrant-beige.vercel.app'],
         headers: ['*'],
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
         credentials: true,
