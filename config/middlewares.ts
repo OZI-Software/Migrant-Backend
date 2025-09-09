@@ -1,5 +1,5 @@
-// config/middlewares.js
-module.exports = [
+// config/middlewares.ts
+export default [
   'strapi::errors',
   {
     name: 'strapi::security',

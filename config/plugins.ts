@@ -1,5 +1,5 @@
-// config/plugins.js
-module.exports = ({ env }) => ({
+// config/plugins.ts
+export default ({ env }) => ({
   //  "strapi-chatgpt": {
   //   enabled: true,
   // },
