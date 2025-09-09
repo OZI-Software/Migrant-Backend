@@ -24,8 +24,6 @@ import {
 import { Mail, Play, ArrowClockwise } from '@strapi/icons';
 import { useFetchClient } from '@strapi/strapi/admin';
 
-// Using official Strapi useFetchClient hook for authentication
-
 // Newsletter interface based on Strapi content type
 interface Newsletter {
   id: number;
@@ -70,12 +68,8 @@ const NewsletterApp: React.FC = () => {
   const [stats, setStats] = useState<{ total: number; draft: number; sent: number } | null>(null);
   const [result, setResult] = useState<MessageResult | null>(null);
   const [activeTab, setActiveTab] = useState<number>(0);
-  
-  const { get, post, put } = useFetchClient();
 
-  // Environment variables
-  const baseUrl = process.env.BASE_URL || 'http://localhost:1337';
-  const strapiToken = process.env.STRAPI_TOKEN;
+  const { get, post, put } = useFetchClient();
 
   const loadNewsletters = async () => {
     try {
@@ -83,14 +77,14 @@ const NewsletterApp: React.FC = () => {
       const allResponse = await get('/content-manager/collection-types/api::newsletter.newsletter?populate=*') as ApiResponse<Newsletter[]>;
       // Fetch draft newsletters for send section using admin content-manager API
       const draftResponse = await get('/content-manager/collection-types/api::newsletter.newsletter?populate=*&filters[docStatus][$eq]=draft') as ApiResponse<Newsletter[]>;
-      
+
       console.log('All Newsletters API Response:', allResponse);
       console.log('Draft Newsletters API Response:', draftResponse);
-      
+
       // Handle admin API response format for all newsletters
       const allPayload: any = allResponse?.data ?? allResponse;
       let allNewsletterData: Newsletter[] = [];
-      
+
       if (allPayload?.data && Array.isArray(allPayload.data)) {
         allNewsletterData = allPayload.data;
       } else if (allPayload?.results && Array.isArray(allPayload.results)) {
@@ -98,28 +92,28 @@ const NewsletterApp: React.FC = () => {
       } else if (Array.isArray(allPayload)) {
         allNewsletterData = allPayload;
       }
-      
+
       // Handle admin API response format for draft newsletters
       const draftPayload: any = draftResponse?.data ?? draftResponse;
       let draftNewsletterData: Newsletter[] = [];
-       
-       if (draftPayload?.data && Array.isArray(draftPayload.data)) {
-         draftNewsletterData = draftPayload.data;
-       } else if (draftPayload?.results && Array.isArray(draftPayload.results)) {
-         draftNewsletterData = draftPayload.results;
-       } else if (Array.isArray(draftPayload)) {
-         draftNewsletterData = draftPayload;
-       }
-       
-       console.log('Processed All Newsletter Data:', allNewsletterData);
-       console.log('Processed Draft Newsletter Data:', draftNewsletterData);
-       
-       setNewsletters(allNewsletterData);
-       setDraftNewsletters(draftNewsletterData);
-       
-       if (allNewsletterData.length === 0) {
-         setResult({ type: 'error', message: 'No newsletters found. Please create newsletters in Content Manager first.' });
-       }
+
+      if (draftPayload?.data && Array.isArray(draftPayload.data)) {
+        draftNewsletterData = draftPayload.data;
+      } else if (draftPayload?.results && Array.isArray(draftPayload.results)) {
+        draftNewsletterData = draftPayload.results;
+      } else if (Array.isArray(draftPayload)) {
+        draftNewsletterData = draftPayload;
+      }
+
+      console.log('Processed All Newsletter Data:', allNewsletterData);
+      console.log('Processed Draft Newsletter Data:', draftNewsletterData);
+
+      setNewsletters(allNewsletterData);
+      setDraftNewsletters(draftNewsletterData);
+
+      if (allNewsletterData.length === 0) {
+        setResult({ type: 'error', message: 'No newsletters found. Please create newsletters in Content Manager first.' });
+      }
     } catch (error: unknown) {
       console.error('Error fetching newsletters:', error);
       setResult({ type: 'error', message: 'Failed to fetch newsletters. Please check if newsletters exist in Content Manager.' });
@@ -130,33 +124,30 @@ const NewsletterApp: React.FC = () => {
   // Fetch newsletters on component mount
   useEffect(() => {
     let isMounted = true;
-    
+
     const fetchData = async () => {
       if (!isMounted) return;
       await loadNewsletters();
     };
-    
+
     fetchData();
-    
+
     // Cleanup function to prevent state updates on unmounted component
     return () => {
       isMounted = false;
     };
   }, []);
 
-
-
-  const handleNewsletterSelect = (newsletterId: string | number): void => {
-    const idString = newsletterId.toString();
-    const newsletter = draftNewsletters.find(n => n.id.toString() === idString);
+  const handleNewsletterSelect = (newsletterId: string): void => {
+    const newsletter = draftNewsletters.find(n => n.id.toString() === newsletterId);
     if (newsletter) {
-      setSelectedNewsletter(idString);
+      setSelectedNewsletter(newsletterId);
       setSubject(newsletter.subject || '');
       setContent(newsletter.content || '');
     }
   };
 
-  const getStatusBadge = (status: 'draft' | 'sent'): { children: string; backgroundColor: string; textColor: string } => {
+  const getStatusBadge = (status: 'draft' | 'sent') => {
     switch (status) {
       case 'sent':
         return { children: 'Sent', backgroundColor: 'secondary100', textColor: 'secondary600' };
@@ -264,42 +255,42 @@ const NewsletterApp: React.FC = () => {
             </body>
           </html>
         `
-    });
-    setResult({ type: 'success', message: 'Newsletter sent successfully!', success: true });
+      });
+      setResult({ type: 'success', message: 'Newsletter sent successfully!', success: true });
 
-    // Update newsletter status to 'sent' and sentAt if successful
+      // Update newsletter status to 'sent' and sentAt if successful
+      try {
+        await updateNewsletterStatus(Number(selectedNewsletter), 'sent');
+        console.log('Newsletter status updated successfully');
+      } catch (statusError) {
+        console.error('Failed to update newsletter status:', statusError);
+        setResult({ type: 'error', message: 'Newsletter sent, but failed to update status.' });
+      }
+      await loadNewsletters();
+      // Clear inputs after successful send
+      setSubject('');
+      setContent('');
+    } catch (error) {
+      setResult({ type: 'error', message: error instanceof Error ? error.message : 'An error occurred' });
+    }
+    setLoading(false);
+  };
+
+  const updateNewsletterStatus = async (newsletterId: number, status: 'draft' | 'sent'): Promise<void> => {
     try {
-      await updateNewsletterStatus(Number(selectedNewsletter), 'sent'); // <-- FIX: convert to number
-      console.log('Newsletter status updated successfully');
-    } catch (statusError) {
-      console.error('Failed to update newsletter status:', statusError);
-      setResult({ type: 'error', message: 'Newsletter sent, but failed to update status.' });
+      console.log('Updating newsletter status:', { newsletterId, status });
+      // Call custom API to update status to avoid Content Manager 404s
+      const url = `/api/newsletter/${newsletterId}/status`;
+      const response = await put(url, { status });
+      console.log('Newsletter status update response:', response);
+      if (!response || (response as any)?.status >= 400) {
+        throw new Error('Failed to update newsletter status: ' + ((response as any)?.statusText || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error updating newsletter status:', error);
+      throw error;
     }
-    await loadNewsletters();
-    // Clear inputs after successful send
-    setSubject('');
-    setContent('');
-  } catch (error) {
-    setResult({ type: 'error', message: error instanceof Error ? error.message : 'An error occurred' });
-  }
-  setLoading(false);
-};
-
-const updateNewsletterStatus = async (newsletterId: number, status: 'draft' | 'sent'): Promise<void> => {
-  try {
-    console.log('Updating newsletter status:', { newsletterId, status });
-    // Call custom API to update status to avoid Content Manager 404s
-    const url = `/api/newsletter/${newsletterId}/status`;
-    const response = await put(url, { status });
-    console.log('Newsletter status update response:', response);
-    if (!response || (response as any)?.status >= 400) {
-      throw new Error('Failed to update newsletter status: ' + ((response as any)?.statusText || 'Unknown error'));
-    }
-  } catch (error) {
-    console.error('Error updating newsletter status:', error);
-    throw error;
-  }
-};
+  };
 
   return (
     <Main>
@@ -322,7 +313,7 @@ const updateNewsletterStatus = async (newsletterId: number, status: 'draft' | 's
           </Button>
         </Flex>
       </Box>
-      
+
       {result && (
         <Box padding={4}>
           <Alert
@@ -338,180 +329,180 @@ const updateNewsletterStatus = async (newsletterId: number, status: 'draft' | 's
 
       <Box padding={4}>
         <Flex marginBottom={4}>
-          <Button 
+          <Button
             variant={activeTab === 0 ? 'default' : 'tertiary'}
             onClick={() => setActiveTab(0)}
             marginRight={2}
           >
             Send Newsletter
           </Button>
-          <Button 
+          <Button
             variant={activeTab === 1 ? 'default' : 'tertiary'}
             onClick={() => setActiveTab(1)}
           >
             Newsletter Status
           </Button>
         </Flex>
-        
+
         {activeTab === 0 && (
-        <Box padding={4} background="neutral0" hasRadius shadow="tableShadow">
-          <Box marginBottom={4}>
-            <Field.Root name="newsletter">
-              <Field.Label>Select Newsletter</Field.Label>
-              <SingleSelect
-                placeholder="Choose a newsletter to send"
-                value={selectedNewsletter}
-                onChange={handleNewsletterSelect}
-              >
-                {Array.isArray(draftNewsletters) && draftNewsletters.map((newsletter) => (
-                  <SingleSelectOption key={newsletter.id} value={newsletter.id.toString()}>
-                    {newsletter.title || 'Untitled'} - {newsletter.subject || 'No Subject'}
-                  </SingleSelectOption>
-                ))}
-              </SingleSelect>
+          <Box padding={4} background="neutral0" hasRadius shadow="tableShadow">
+            <Box marginBottom={4}>
+              <Field.Root name="newsletter">
+                <Field.Label>Select Newsletter</Field.Label>
+                <SingleSelect
+                  placeholder="Choose a newsletter to send"
+                  value={selectedNewsletter}
+                  onChange={(value) => handleNewsletterSelect(value.toString())}
+                >
+                  {Array.isArray(draftNewsletters) && draftNewsletters.map((newsletter) => (
+                    <SingleSelectOption key={newsletter.id} value={newsletter.id.toString()}>
+                      {newsletter.title || 'Untitled'} - {newsletter.subject || 'No Subject'}
+                    </SingleSelectOption>
+                  ))}
+                </SingleSelect>
+                <Field.Error />
+                <Field.Hint />
+              </Field.Root>
+            </Box>
+
+            <Field.Root name="subject" required>
+              <Field.Label>Subject</Field.Label>
+              <TextInput
+                name="subject"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="Newsletter subject"
+              />
               <Field.Error />
               <Field.Hint />
             </Field.Root>
+
+            <Box marginTop={4}>
+              <Field.Root name="content" required>
+                <Field.Label>Content Preview</Field.Label>
+                <Textarea
+                  name="content"
+                  value={typeof content === 'string' ? content : JSON.stringify(content)}
+                  onChange={(e) => setContent(e.target.value)}
+                  placeholder="Newsletter content (HTML supported)"
+                  rows={8}
+                />
+                <Field.Error />
+                <Field.Hint />
+              </Field.Root>
+            </Box>
+
+            <Box marginTop={4}>
+              <Typography variant="beta" marginBottom={2}>
+                Test Email
+              </Typography>
+              <Flex gap={2}>
+                <TextInput
+                  name="testEmail"
+                  value={testEmail}
+                  onChange={(e) => setTestEmail(e.target.value)}
+                  placeholder="test@example.com"
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  onClick={handleSendTest}
+                  loading={loading}
+                  startIcon={<Play />}
+                  variant="secondary"
+                  disabled={!subject || !content}
+                >
+                  Send Test
+                </Button>
+              </Flex>
+            </Box>
+
+            <Box marginTop={4}>
+              <Button
+                onClick={handleSendToAll}
+                loading={loading}
+                startIcon={<Mail />}
+                variant="default"
+                size="L"
+                fullWidth
+                disabled={!selectedNewsletter}
+              >
+                Send to All Subscribers
+              </Button>
+            </Box>
           </Box>
-
-          <Field.Root name="subject" required>
-                  <Field.Label>Subject</Field.Label>
-                  <TextInput
-                    name="subject"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder="Newsletter subject"
-                  />
-                  <Field.Error />
-                  <Field.Hint />
-                </Field.Root>
-                
-                <Box marginTop={4}>
-                  <Field.Root name="content" required>
-                    <Field.Label>Content Preview</Field.Label>
-                    <Textarea
-                      name="content"
-                      value={typeof content === 'string' ? content : JSON.stringify(content)}
-                      onChange={(e) => setContent(e.target.value)}
-                      placeholder="Newsletter content (HTML supported)"
-                      rows={8}
-                    />
-                    <Field.Error />
-                    <Field.Hint />
-                  </Field.Root>
-                </Box>
-
-                <Box marginTop={4}>
-                  <Typography variant="beta" marginBottom={2}>
-                    Test Email
-                  </Typography>
-                  <Flex gap={2}>
-                    <TextInput
-                      name="testEmail"
-                      value={testEmail}
-                      onChange={(e) => setTestEmail(e.target.value)}
-                      placeholder="test@example.com"
-                      style={{ flex: 1 }}
-                    />
-                    <Button
-                      onClick={handleSendTest}
-                      loading={loading}
-                      startIcon={<Play />}
-                      variant="secondary"
-                      disabled={!subject || !content}
-                    >
-                      Send Test
-                    </Button>
-                  </Flex>
-                </Box>
-
-                <Box marginTop={4}>
-                   <Button
-                     onClick={handleSendToAll}
-                     loading={loading}
-                     startIcon={<Mail />}
-                     variant="default"
-                     size="L"
-                     fullWidth
-                     disabled={!selectedNewsletter}
-                   >
-                     Send to All Subscribers
-                   </Button>
-                 </Box>
-              </Box>
         )}
-        
+
         {activeTab === 1 && (
-              <Box padding={4} background="neutral0" hasRadius shadow="tableShadow">
-                <Typography variant="beta" marginBottom={4}>
-                  Newsletter Status Overview
+          <Box padding={4} background="neutral0" hasRadius shadow="tableShadow">
+            <Typography variant="beta" marginBottom={4}>
+              Newsletter Status Overview
+            </Typography>
+
+            {newsletters.length > 0 ? (
+              <Table colCount={5} rowCount={newsletters.length + 1}>
+                <Thead>
+                  <Tr>
+                    <Th>
+                      <Typography variant="sigma">Title</Typography>
+                    </Th>
+                    <Th>
+                      <Typography variant="sigma">Subject</Typography>
+                    </Th>
+                    <Th>
+                      <Typography variant="sigma">Status</Typography>
+                    </Th>
+                    <Th>
+                      <Typography variant="sigma">Created</Typography>
+                    </Th>
+                    <Th>
+                      <Typography variant="sigma">Sent At</Typography>
+                    </Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {Array.isArray(newsletters) && newsletters.map((newsletter) => (
+                    <Tr key={newsletter.id}>
+                      <Td>
+                        <Typography textColor="neutral800">
+                          {newsletter.title || 'Untitled'}
+                        </Typography>
+                      </Td>
+                      <Td>
+                        <Typography textColor="neutral600">
+                          {newsletter.subject || 'No Subject'}
+                        </Typography>
+                      </Td>
+                      <Td>
+                        <Badge {...getStatusBadge(newsletter.docStatus || 'draft')} />
+                      </Td>
+                      <Td>
+                        <Typography textColor="neutral600">
+                          {newsletter.createdAt
+                            ? new Date(newsletter.createdAt).toLocaleDateString()
+                            : '-'
+                          }
+                        </Typography>
+                      </Td>
+                      <Td>
+                        <Typography textColor="neutral600">
+                          {newsletter.sentAt
+                            ? new Date(newsletter.sentAt).toLocaleDateString()
+                            : '-'
+                          }
+                        </Typography>
+                      </Td>
+                    </Tr>
+                  ))}
+                </Tbody>
+              </Table>
+            ) : (
+              <Box textAlign="center" padding={8}>
+                <Typography variant="omega" textColor="neutral500">
+                  No newsletters found. Create newsletters in the Content Manager first.
                 </Typography>
-                
-                {newsletters.length > 0 ? (
-                  <Table colCount={5} rowCount={newsletters.length + 1}>
-                    <Thead>
-                      <Tr>
-                        <Th>
-                          <Typography variant="sigma">Title</Typography>
-                        </Th>
-                        <Th>
-                          <Typography variant="sigma">Subject</Typography>
-                        </Th>
-                        <Th>
-                          <Typography variant="sigma">Status</Typography>
-                        </Th>
-                        <Th>
-                          <Typography variant="sigma">Created</Typography>
-                        </Th>
-                        <Th>
-                          <Typography variant="sigma">Sent At</Typography>
-                        </Th>
-                      </Tr>
-                    </Thead>
-                    <Tbody>
-                      {Array.isArray(newsletters) && newsletters.map((newsletter) => (
-                        <Tr key={newsletter.id}>
-                          <Td>
-                            <Typography textColor="neutral800">
-                              {newsletter.title || 'Untitled'}
-                            </Typography>
-                          </Td>
-                          <Td>
-                            <Typography textColor="neutral600">
-                              {newsletter.subject || 'No Subject'}
-                            </Typography>
-                          </Td>
-                          <Td>
-                            <Badge {...getStatusBadge(newsletter.docStatus || 'draft')} />
-                          </Td>
-                          <Td>
-                            <Typography textColor="neutral600">
-                              {newsletter.createdAt 
-                                ? new Date(newsletter.createdAt).toLocaleDateString()
-                                : '-'
-                              }
-                            </Typography>
-                          </Td>
-                          <Td>
-                            <Typography textColor="neutral600">
-                              {newsletter.sentAt 
-                                ? new Date(newsletter.sentAt).toLocaleDateString()
-                                : '-'
-                              }
-                            </Typography>
-                          </Td>
-                        </Tr>
-                      ))}
-                    </Tbody>
-                  </Table>
-                ) : (
-                  <Box textAlign="center" padding={8}>
-                    <Typography variant="omega" textColor="neutral500">
-                      No newsletters found. Create newsletters in the Content Manager first.
-                    </Typography>
-                  </Box>
-                )}  
-               </Box>
+              </Box>
+            )}
+          </Box>
         )}
       </Box>
     </Main>

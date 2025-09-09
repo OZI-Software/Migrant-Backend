@@ -5,5 +5,9 @@ module.exports = ({ strapi }) => {
     name: 'text-ai',
     plugin: 'ai-text-generation',
     type: 'string',
+    inputSize: {
+      default: 6,
+      isResizable: true,
+    },
   });
 };

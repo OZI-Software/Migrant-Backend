@@ -1,59 +1,30 @@
-import { prefixPluginTranslations } from '@strapi/helper-plugin';
-import pluginPkg from '../../package.json';
+'use strict';
+
+import { Sparkle } from '@strapi/icons';
 import pluginId from './pluginId';
-import PluginIcon from './components/PluginIcon';
 
-
-const name = pluginPkg.strapi.name;
-
-export default { 
+export default {
   register(app) {
-    
-    app.customFields.register({
-      name: "text-ai",
-      pluginId: "ai-text-generation", 
-      type: "string", 
+    app.addMenuLink({
+      to: `/plugins/${pluginId}`,
+      icon: Sparkle,
       intlLabel: {
-        id: "ai-text-generation.text-ai.label",
-        defaultMessage: "Text AI",
+        id: `${pluginId}.plugin.name`,
+        defaultMessage: 'AI Text Generation',
       },
-      intlDescription: {
-        id: "ai-text-generation.text-ai.description",
-        defaultMessage: "Let AI do your writing!",
+      Component: async () => {
+        const component = await import(/* webpackChunkName: "ai-text-generation" */ './pages/App.tsx');
+        return component.default;
       },
-      icon: PluginIcon,
-      components: {
-        Input: async () => import(/* webpackChunkName: "input-component" */ "./components/Input"),
-      },
-      options: {
-      },
+      permissions: [], // Super Admin should have access to all plugins by default
+    });
+
+    app.registerPlugin({
+      id: pluginId,
+      name: 'AI Text Generation',
     });
   },
-
-  
-
-  bootstrap(app) {},
-  async registerTrads({ locales }) {
-    const importedTrads = await Promise.all(
-      locales.map((locale) => {
-        return import(
-          /* webpackChunkName: "translation-[request]" */ `./translations/${locale}.json`
-        )
-          .then(({ default: data }) => {
-            return {
-              data: prefixPluginTranslations(data, pluginId),
-              locale,
-            };
-          })
-          .catch(() => {
-            return {
-              data: {},
-              locale,
-            };
-          });
-      })
-    );
-
-    return Promise.resolve(importedTrads);
+  bootstrap(app) {
+    // Plugin bootstrap logic
   },
 };

@@ -1,18 +1,15 @@
-// Path: ./src/plugins/ai-text-generation/server/index.js
+// Path: ./src/plugins/ai-text-generation/server/src/index.js
 
 "use strict";
 
-const services = require("./src/services");
-const controllers = require("./src/controllers");
-const routes = require("./src/routes");
-const adminRoutes = require("./src/routes/admin");
-const register = require("./register");
-const config = require("./src/config");
+const services = require("./services");
+const controllers = require("./controllers");
+const routes = require("./routes");
+const adminRoutes = require("./routes/admin");
 
 module.exports = {
   services,
   controllers,
-  config,
   routes: {
     'content-api': {
       type: 'content-api',
@@ -23,7 +20,20 @@ module.exports = {
       routes: adminRoutes
     }
   },
-  register,
+
+  register({ strapi }) {
+    // Register the custom field on the server
+    strapi.customFields.register({
+      name: "ai-text-generator",
+      plugin: "ai-text-generation",
+      type: "text",
+      inputSize: {
+        default: 6,
+        isResizable: true,
+      },
+    });
+  },
+
   bootstrap({ strapi }) {
     // Initialize the text generation service
     const textGenerationService = strapi

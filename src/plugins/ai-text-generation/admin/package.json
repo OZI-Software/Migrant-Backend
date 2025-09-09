@@ -1,0 +1,19 @@
+{
+  "name": "ai-text-generation-admin",
+  "version": "1.0.0",
+  "description": "Admin interface for AI Text Generation plugin",
+  "main": "./src/index.tsx",
+  "dependencies": {
+    "@strapi/design-system": "^2.0.0",
+    "@strapi/icons": "^2.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "peerDependencies": {
+    "@strapi/strapi": "^5.0.0"
+  },
+  "strapi": {
+    "kind": "plugin",
+    "name": "ai-text-generation"
+  }
+}

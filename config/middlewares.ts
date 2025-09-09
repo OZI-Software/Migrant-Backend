@@ -7,11 +7,12 @@ module.exports = [
       contentSecurityPolicy: {
         useDefaults: true,
         directives: {
-          'connect-src': ["'self'", 'https:'],
-          'img-src': ["'self'", 'data:', 'blob:', 'cdn.jsdelivr.net', 'strapi.io'],
-          'media-src': ["'self'", 'data:', 'blob:'],
-          'script-src': ["'self'", "'unsafe-inline'", 'cdn.jsdelivr.net'],
-          'style-src': ["'self'", "'unsafe-inline'", 'cdn.jsdelivr.net'],
+          'connect-src': ["'self'", 'https:', 'http:'],
+          'img-src': ["'self'", 'data:', 'blob:', 'cdn.jsdelivr.net', 'strapi.io', 'res.cloudinary.com'],
+          'media-src': ["'self'", 'data:', 'blob:', 'res.cloudinary.com'],
+          'script-src': ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+          'style-src': ["'self'", "'unsafe-inline'"],
+          'font-src': ["'self'", 'data:', 'blob:'],
           upgradeInsecureRequests: null,
         },
       },
@@ -29,10 +30,21 @@ module.exports = [
   'strapi::body',
   'strapi::session',
   'strapi::favicon',
-  'strapi::public',
+  {
+    name: 'strapi::public',
+    config: {
+      defaultIndex: false,
+      maxAge: 31536000,
+      path: './public',
+      prefix: '/public',
+      static: {
+        etag: true,
+        maxAge: 31536000,
+        immutable: true,
+      },
+    },
+  },
   'strapi::errors',
-  'strapi::security',
-  'strapi::cors',
   'strapi::poweredBy',
   'strapi::logger',
 ];

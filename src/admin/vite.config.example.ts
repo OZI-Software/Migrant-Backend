@@ -8,5 +8,10 @@ export default (config: UserConfig) => {
         '@': '/src',
       },
     },
+     server: {
+    headers: {
+      'Content-Type': 'application/javascript',
+    },
+  },
   });
 };
