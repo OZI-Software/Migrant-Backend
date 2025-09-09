@@ -22,8 +22,10 @@ export default [
     name: 'strapi::cors',
     config: {
       enabled: true,
-      headers: '*',
-      origin: ['http://localhost:1337', 'http://localhost:3000', 'http://localhost:8000']
+      headers: ['*'],
+      origin: ['http://localhost:1337', 'http://localhost:3000', 'http://localhost:8000', 'https://migrant-beige.vercel.app'],
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
+      credentials: true
     }
   },
   'strapi::query',
