@@ -14,7 +14,7 @@
       "name": "Apache 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "x-generation-date": "2025-09-09T22:20:36.992Z"
+    "x-generation-date": "2025-09-18T18:38:36.941Z"
   },
   "x-strapi-config": {
     "plugins": [
@@ -98,12 +98,13 @@
               "slug",
               "excerpt",
               "featuredImage",
+              "imageAlt",
               "isBreaking",
+              "content",
               "readTime",
               "location",
               "seoTitle",
-              "seoDescription",
-              "content"
+              "seoDescription"
             ],
             "type": "object",
             "properties": {
@@ -127,8 +128,14 @@
                 ],
                 "example": "string or id"
               },
+              "imageAlt": {
+                "type": "string"
+              },
               "isBreaking": {
                 "type": "boolean"
+              },
+              "content": {
+                "type": "string"
               },
               "readTime": {
                 "type": "integer"
@@ -181,9 +188,6 @@
                   ],
                   "example": "string or id"
                 }
-              },
-              "content": {
-                "type": "string"
               },
               "locale": {
                 "type": "string"
@@ -248,12 +252,13 @@
           "slug",
           "excerpt",
           "featuredImage",
+          "imageAlt",
           "isBreaking",
+          "content",
           "readTime",
           "location",
           "seoTitle",
-          "seoDescription",
-          "content"
+          "seoDescription"
         ],
         "properties": {
           "id": {
@@ -869,8 +874,14 @@
               }
             }
           },
+          "imageAlt": {
+            "type": "string"
+          },
           "isBreaking": {
             "type": "boolean"
+          },
+          "content": {
+            "type": "string"
           },
           "readTime": {
             "type": "integer"
@@ -1059,8 +1070,14 @@
                         }
                       }
                     },
+                    "imageAlt": {
+                      "type": "string"
+                    },
                     "isBreaking": {
                       "type": "boolean"
+                    },
+                    "content": {
+                      "type": "string"
                     },
                     "readTime": {
                       "type": "integer"
@@ -1262,9 +1279,6 @@
                         }
                       }
                     },
-                    "content": {
-                      "type": "string"
-                    },
                     "createdAt": {
                       "type": "string",
                       "format": "date-time"
@@ -1396,9 +1410,6 @@
                 }
               }
             }
-          },
-          "content": {
-            "type": "string"
           },
           "createdAt": {
             "type": "string",
@@ -2206,8 +2217,14 @@
                     }
                   }
                 },
+                "imageAlt": {
+                  "type": "string"
+                },
                 "isBreaking": {
                   "type": "boolean"
+                },
+                "content": {
+                  "type": "string"
                 },
                 "readTime": {
                   "type": "integer"
@@ -2486,9 +2503,6 @@
                       }
                     }
                   }
-                },
-                "content": {
-                  "type": "string"
                 },
                 "createdAt": {
                   "type": "string",
@@ -3340,8 +3354,14 @@
                     }
                   }
                 },
+                "imageAlt": {
+                  "type": "string"
+                },
                 "isBreaking": {
                   "type": "boolean"
+                },
+                "content": {
+                  "type": "string"
                 },
                 "readTime": {
                   "type": "integer"
@@ -3620,9 +3640,6 @@
                       }
                     }
                   }
-                },
-                "content": {
-                  "type": "string"
                 },
                 "createdAt": {
                   "type": "string",
@@ -5480,8 +5497,14 @@
                     }
                   }
                 },
+                "imageAlt": {
+                  "type": "string"
+                },
                 "isBreaking": {
                   "type": "boolean"
+                },
+                "content": {
+                  "type": "string"
                 },
                 "readTime": {
                   "type": "integer"
@@ -5760,9 +5783,6 @@
                       }
                     }
                   }
-                },
-                "content": {
-                  "type": "string"
                 },
                 "createdAt": {
                   "type": "string",

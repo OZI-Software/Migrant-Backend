@@ -37,10 +37,18 @@
         "audios"
       ]
     },
+    "imageAlt": {
+      "type": "string",
+      "required": true
+    },
     "isBreaking": {
       "type": "boolean",
       "required": true,
       "default": false
+    },
+    "content": {
+      "type": "richtext",
+      "required": true
     },
     "readTime": {
       "type": "integer",
@@ -84,10 +92,6 @@
       "relation": "manyToMany",
       "target": "api::tag.tag",
       "inversedBy": "articles"
-    },
-    "content": {
-      "type": "richtext",
-      "required": true
     }
   }
 }
