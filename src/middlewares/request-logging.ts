@@ -115,10 +115,10 @@ const requestLogging = (config: LoggingConfig = {}) => {
             response: logResponseBody ? formatLogData(responseData) : '[Response logging disabled]'
           });
         } else if (ctx.status >= 400) {
-          console.warn(`[WARN] Newsletter Subscription Request Failed:`, {
-            ...logData,
-            response: formatLogData(responseData)
-          });
+          // console.warn(`[WARN] Newsletter Subscription Request Failed:`, {
+          //   ...logData,
+          //   response: formatLogData(responseData)
+          // });
         }
       }
 
@@ -137,21 +137,21 @@ const requestLogging = (config: LoggingConfig = {}) => {
 
       // Log suspicious activity
       if (ctx.status === 429) {
-        console.warn(`[SECURITY] Rate limit exceeded for newsletter subscription:`, {
-          ...requestInfo,
-          rateLimitHeaders: {
-            limit: ctx.response.headers['x-ratelimit-limit'],
-            remaining: ctx.response.headers['x-ratelimit-remaining'],
-            reset: ctx.response.headers['x-ratelimit-reset']
-          }
-        });
+        // console.warn(`[SECURITY] Rate limit exceeded for newsletter subscription:`, {
+        //   ...requestInfo,
+        //   rateLimitHeaders: {
+        //     limit: ctx.response.headers['x-ratelimit-limit'],
+        //     remaining: ctx.response.headers['x-ratelimit-remaining'],
+        //     reset: ctx.response.headers['x-ratelimit-reset']
+        //   }
+        // });
       }
 
       if (ctx.status === 400 && (ctx.body as any)?.error?.name === 'ValidationError') {
-        console.warn(`[SECURITY] Invalid input detected for newsletter subscription:`, {
-          ...requestInfo,
-          validationErrors: (ctx.body as any).error.details?.errors || []
-        });
+        // console.warn(`[SECURITY] Invalid input detected for newsletter subscription:`, {
+        //   ...requestInfo,
+        //   validationErrors: (ctx.body as any).error.details?.errors || []
+        // });
       }
 
       if (ctx.status === 409) {

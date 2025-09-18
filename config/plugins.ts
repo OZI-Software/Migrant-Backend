@@ -1,8 +1,5 @@
 // config/plugins.ts
 export default ({ env }) => ({
-  //  "strapi-chatgpt": {
-  //   enabled: true,
-  // },
   'ai-text-generation': {
     enabled: true,
     config: {
