@@ -23,7 +23,7 @@ export default [
     config: {
       enabled: true,
       headers: ['*'],
-      origin: ['https://migrant-beige.vercel.app', 'https://theimmigrant.com.au'],
+      origin: ['https://migrant-beige.vercel.app', 'https://theimmigrant.com.au', 'https://www.theimmigrant.com.au'],
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
       credentials: true
     }
