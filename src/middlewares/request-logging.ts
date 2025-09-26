@@ -5,6 +5,13 @@
 
 import { Context, Next } from 'koa';
 
+// Extend Koa Context to include Strapi request body
+interface StrapiContext extends Context {
+  request: Context['request'] & {
+    body?: any;
+  };
+}
+
 interface LoggingConfig {
   logLevel?: 'info' | 'warn' | 'error' | 'debug';
   logSuccessfulRequests?: boolean;
@@ -58,7 +65,7 @@ const requestLogging = (config: LoggingConfig = {}) => {
     }
   };
 
-  return async (ctx: Context, next: Next) => {
+  return async (ctx: StrapiContext, next: Next) => {
     // Only apply to newsletter subscription endpoints
     if (!ctx.request.url.includes('/newsletter-subscription')) {
       return await next();

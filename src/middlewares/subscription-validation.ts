@@ -5,6 +5,13 @@
 
 import { Context, Next } from 'koa';
 
+// Extend Koa Context to include Strapi request body
+interface StrapiContext extends Context {
+  request: Context['request'] & {
+    body?: any;
+  };
+}
+
 interface Subscriber {
   id: number;
   email: string;
@@ -28,7 +35,7 @@ const subscriptionValidation = (config: SubscriptionValidationConfig = {}) => {
     maxNameLength = 100
   } = config;
 
-  return async (ctx: Context, next: Next) => {
+  return async (ctx: StrapiContext, next: Next) => {
     // Only apply to newsletter subscription endpoints
     if (!ctx.request.url.includes('/newsletter-subscription')) {
       return await next();

@@ -4,6 +4,27 @@
  */
 
 import { Context, Next } from 'koa';
+import { z } from 'zod';
+
+// Extend Koa Context to include Strapi request body
+interface StrapiContext extends Context {
+  request: Context['request'] & {
+    body?: any;
+  };
+}
+
+// Email validation schema
+const emailSchema = z.object({
+  email: z.string().email('Invalid email format')
+});
+
+// Interface for request data structure
+interface RequestData {
+  email?: string;
+  data?: {
+    email?: string;
+  };
+}
 
 interface EmailValidationConfig {
   allowedDomains?: string[];
@@ -11,8 +32,8 @@ interface EmailValidationConfig {
   requireVerification?: boolean;
 }
 
-const emailValidation = (config: EmailValidationConfig = {}) => {
-  return async (ctx: Context, next: Next) => {
+export const emailValidation = (config: EmailValidationConfig = {}) => {
+  return async (ctx: StrapiContext, next: Next) => {
     // Only apply to newsletter subscription endpoints
     if (!ctx.request.url.includes('/newsletter-subscription')) {
       return await next();
