@@ -397,9 +397,8 @@ export interface ApiArticleArticle extends Struct.CollectionTypeSchema {
       }>;
     featuredImage: Schema.Attribute.Media<
       'images' | 'files' | 'videos' | 'audios'
-    > &
-      Schema.Attribute.Required;
-    imageAlt: Schema.Attribute.String & Schema.Attribute.Required;
+    >;
+    imageAlt: Schema.Attribute.String;
     isBreaking: Schema.Attribute.Boolean &
       Schema.Attribute.Required &
       Schema.Attribute.DefaultTo<false>;
@@ -437,6 +436,10 @@ export interface ApiArticleArticle extends Struct.CollectionTypeSchema {
         maxLength: 60;
       }>;
     slug: Schema.Attribute.UID<'title'> & Schema.Attribute.Required;
+    sourceUrl: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 500;
+      }>;
     tags: Schema.Attribute.Relation<'manyToMany', 'api::tag.tag'>;
     title: Schema.Attribute.String &
       Schema.Attribute.Required &

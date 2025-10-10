@@ -29,7 +29,7 @@
     "featuredImage": {
       "type": "media",
       "multiple": false,
-      "required": true,
+      "required": false,
       "allowedTypes": [
         "images",
         "files",
@@ -39,7 +39,7 @@
     },
     "imageAlt": {
       "type": "string",
-      "required": true
+      "required": false
     },
     "isBreaking": {
       "type": "boolean",
@@ -74,6 +74,10 @@
     },
     "publishedDate": {
       "type": "datetime"
+    },
+    "sourceUrl": {
+      "type": "string",
+      "maxLength": 500
     },
     "author": {
       "type": "relation",

@@ -21,17 +21,21 @@
     "@strapi/plugin-documentation": "^5.23.2",
     "@strapi/plugin-users-permissions": "5.23.0",
     "@strapi/strapi": "5.23.0",
+    "axios": "^1.12.2",
     "better-sqlite3": "11.3.0",
+    "node-cron": "^4.2.1",
     "pg": "^8.16.3",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-router-dom": "^6.0.0",
+    "rss-parser": "^3.13.0",
     "strapi-google-analytics-dashboard": "^0.0.2",
     "strapi-provider-email-brevo": "^1.0.4",
     "styled-components": "^6.0.0"
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/node-cron": "^3.0.11",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "typescript": "^5"
