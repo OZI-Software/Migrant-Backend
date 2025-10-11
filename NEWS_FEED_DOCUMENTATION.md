@@ -18,12 +18,14 @@ This system automatically collects news articles from Google News RSS feeds and 
 ### Services
 
 1. **GoogleNewsFeedService** (`src/services/google-news-feed.ts`)
+
    - Fetches and parses Google News RSS feeds
    - Transforms news items to Strapi article format
    - Creates articles in the database
    - Handles duplicate detection
 
 2. **NewsCronJobService** (`src/services/news-cron-job.ts`)
+
    - Manages scheduled cron jobs
    - Configures different import schedules for different categories
    - Provides manual job control
@@ -53,20 +55,23 @@ The system uses the following default schedules:
 
 ### Supported Categories
 
-- `topStories` - Top news stories
-- `world` - World news
-- `business` - Business news
-- `technology` - Technology news
-- `entertainment` - Entertainment news
-- `sports` - Sports news
-- `science` - Science news
-- `health` - Health news
+- `politics` - Poltical News
+- `Econonmy` - Economy news
+- `World` - World news
+- `Science` - Science news
+- `Society` - Society news
+- `Law` - Law news
+- `Culture` - Culture news
+- `Security` - Security news
+- `Health` - Health news
+- `Sport` - Sport news
 
 ## Installation and Setup
 
 ### 1. Dependencies
 
 The following packages are automatically installed:
+
 ```bash
 npm install rss-parser node-cron axios
 ```
@@ -74,6 +79,7 @@ npm install rss-parser node-cron axios
 ### 2. Database Schema
 
 The article content type has been updated with:
+
 - `sourceUrl` field to track original news sources
 - Optional `featuredImage` and `imageAlt` fields
 
@@ -126,6 +132,7 @@ curl -X POST http://localhost:1337/api/news-feed/stop
 ### Job Statistics
 
 The system tracks:
+
 - Number of articles imported
 - Number of articles skipped (duplicates)
 - Number of errors encountered
@@ -135,6 +142,7 @@ The system tracks:
 ### Error Handling
 
 The system includes comprehensive error handling for:
+
 - Network failures when fetching RSS feeds
 - Parsing errors for malformed RSS data
 - Database connection issues
@@ -173,15 +181,18 @@ To customize how articles are processed, modify the `transformToArticle()` metho
 ### Common Issues
 
 1. **No articles being imported**
+
    - Check if cron jobs are running: `GET /api/news-feed/status`
    - Verify network connectivity to Google News
    - Check Strapi logs for errors
 
 2. **Duplicate articles**
+
    - The system should automatically prevent duplicates using `sourceUrl`
    - Check if the `sourceUrl` field exists in the article schema
 
 3. **High memory usage**
+
    - Adjust `maxArticlesPerCategory` in job configurations
    - Implement log rotation by calling `clearOldLogs()` periodically
 
@@ -224,6 +235,7 @@ To enable debug logging, set the Strapi log level to debug in your configuration
 ## Support
 
 For issues or questions:
+
 1. Check the Strapi logs for detailed error information
 2. Use the status endpoint to monitor job health
 3. Review the error summary from the logging service

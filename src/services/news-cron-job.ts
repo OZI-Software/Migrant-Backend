@@ -21,33 +21,29 @@ class NewsCronJobService {
    * Default cron job configurations
    */
   private getDefaultConfigs(): Record<string, CronJobConfig> {
+    // All valid categories that should be fetched
+    const allCategories = ['Politics', 'Economy', 'World', 'Security', 'Law', 'Science', 'Society', 'Culture', 'Sport'];
+    
     return {
-      // Every 30 minutes for top stories
-      topStories: {
+      // Every 30 minutes - fetch ALL categories with moderate article count
+      allCategoriesMain: {
         schedule: '*/30 * * * *',
-        categories: ['topStories'],
-        maxArticlesPerCategory: 5,
-        enabled: true
-      },
-      // Every 2 hours for general news categories
-      generalNews: {
-        schedule: '0 */2 * * *',
-        categories: ['world', 'business', 'technology'],
+        categories: allCategories,
         maxArticlesPerCategory: 3,
         enabled: true
       },
-      // Every 4 hours for entertainment and sports
-      lifestyle: {
-        schedule: '0 */4 * * *',
-        categories: ['entertainment', 'sports'],
-        maxArticlesPerCategory: 2,
+      // Every 2 hours - fetch ALL categories with higher article count for comprehensive coverage
+      allCategoriesExtended: {
+        schedule: '0 */2 * * *',
+        categories: allCategories,
+        maxArticlesPerCategory: 5,
         enabled: true
       },
-      // Every 6 hours for science and health
-      specialized: {
+      // Every 6 hours - fetch ALL categories with maximum article count for deep coverage
+      allCategoriesDeep: {
         schedule: '0 */6 * * *',
-        categories: ['science', 'health'],
-        maxArticlesPerCategory: 2,
+        categories: allCategories,
+        maxArticlesPerCategory: 8,
         enabled: true
       }
     };
@@ -203,7 +199,7 @@ class NewsCronJobService {
    * Manually trigger a news import job
    */
   async triggerManualImport(
-    categories: string[] = ['topStories'],
+    categories: string[] = ['World'],
     maxArticlesPerCategory: number = 10
   ): Promise<any> {
     if (this.isRunning) {

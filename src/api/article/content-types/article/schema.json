@@ -19,7 +19,7 @@
     "slug": {
       "type": "uid",
       "targetField": "title",
-      "required": true
+      "required": false
     },
     "excerpt": {
       "type": "string",
@@ -39,6 +39,7 @@
     },
     "imageAlt": {
       "type": "string",
+      "maxLength": 200,
       "required": false
     },
     "isBreaking": {

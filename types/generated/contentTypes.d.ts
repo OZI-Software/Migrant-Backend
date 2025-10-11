@@ -398,7 +398,10 @@ export interface ApiArticleArticle extends Struct.CollectionTypeSchema {
     featuredImage: Schema.Attribute.Media<
       'images' | 'files' | 'videos' | 'audios'
     >;
-    imageAlt: Schema.Attribute.String;
+    imageAlt: Schema.Attribute.String &
+      Schema.Attribute.SetMinMaxLength<{
+        maxLength: 200;
+      }>;
     isBreaking: Schema.Attribute.Boolean &
       Schema.Attribute.Required &
       Schema.Attribute.DefaultTo<false>;
@@ -435,7 +438,7 @@ export interface ApiArticleArticle extends Struct.CollectionTypeSchema {
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 60;
       }>;
-    slug: Schema.Attribute.UID<'title'> & Schema.Attribute.Required;
+    slug: Schema.Attribute.UID<'title'>;
     sourceUrl: Schema.Attribute.String &
       Schema.Attribute.SetMinMaxLength<{
         maxLength: 500;

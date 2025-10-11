@@ -1,5 +1,6 @@
 import type { Core } from '@strapi/strapi';
 import NewsCronJobService from '../../../services/news-cron-job';
+import GoogleNewsFeedService from '../../../services/google-news-feed';
 
 export default ({ strapi }: { strapi: Core.Strapi }) => ({
   /**
@@ -7,10 +8,10 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
    */
   async manualImport(ctx) {
     try {
-      const { categories = ['topStories'], maxArticlesPerCategory = 10 } = ctx.request.body || {};
+      const { categories = ['World'], maxArticlesPerCategory = 10 } = ctx.request.body || {};
 
       // Validate categories
-      const validCategories = ['topStories', 'world', 'business', 'technology', 'entertainment', 'sports', 'science', 'health'];
+      const validCategories = ['Politics', 'Economy', 'World', 'Security', 'Law', 'Science', 'Society', 'Culture', 'Sport'];
       const invalidCategories = categories.filter(cat => !validCategories.includes(cat));
       
       if (invalidCategories.length > 0) {
@@ -22,20 +23,30 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
         return ctx.badRequest('maxArticlesPerCategory must be between 1 and 50');
       }
 
-      const newsCronJobService = (strapi as any).container.get('newsCronJobService');
-      
-      if (!newsCronJobService) {
-        strapi.log.error('NewsCronJobService not found in container');
-        return ctx.internalServerError('News service not available');
+      // Get GoogleNewsFeedService directly
+      let googleNewsService;
+      try {
+        if ((strapi as any).container && typeof (strapi as any).container.get === 'function') {
+          googleNewsService = (strapi as any).container.get('googleNewsFeedService');
+        }
+      } catch (error) {
+        strapi.log.warn('Failed to get GoogleNewsFeedService from container:', error);
       }
       
-      if (newsCronJobService.isJobRunning()) {
-        return ctx.conflict('A news import job is already running. Please wait for it to complete.');
+      // Fallback to global variable
+      if (!googleNewsService && (global as any).googleNewsFeedService) {
+        googleNewsService = (global as any).googleNewsFeedService;
+      }
+      
+      // Last resort: create new instance
+      if (!googleNewsService) {
+        strapi.log.warn('Creating new GoogleNewsFeedService instance as fallback');
+        googleNewsService = new GoogleNewsFeedService();
       }
 
       strapi.log.info(`Manual news import triggered by user. Categories: ${categories.join(', ')}`);
       
-      const result = await newsCronJobService.triggerManualImport(categories, maxArticlesPerCategory);
+      const result = await googleNewsService.importNews(categories, maxArticlesPerCategory);
       
       ctx.body = {
         success: true,
@@ -53,11 +64,25 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
    */
   async getStatus(ctx) {
     try {
-      const newsCronJobService = (strapi as any).container.get('newsCronJobService');
+      // Get NewsCronJobService with fallback mechanism
+      let newsCronJobService;
+      try {
+        if ((strapi as any).container && typeof (strapi as any).container.get === 'function') {
+          newsCronJobService = (strapi as any).container.get('newsCronJobService');
+        }
+      } catch (error) {
+        strapi.log.warn('Failed to get NewsCronJobService from container:', error);
+      }
       
+      // Fallback to global variable
+      if (!newsCronJobService && (global as any).newsCronJobService) {
+        newsCronJobService = (global as any).newsCronJobService;
+      }
+      
+      // Last resort: create new instance
       if (!newsCronJobService) {
-        strapi.log.error('NewsCronJobService not found in container');
-        return ctx.internalServerError('News service not available');
+        strapi.log.warn('Creating new NewsCronJobService instance as fallback');
+        newsCronJobService = new NewsCronJobService();
       }
       
       const status = newsCronJobService.getJobsStatus();
@@ -82,11 +107,25 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
    */
   async startJobs(ctx) {
     try {
-      const newsCronJobService = (strapi as any).container.get('newsCronJobService');
+      // Get NewsCronJobService with fallback mechanism
+      let newsCronJobService;
+      try {
+        if ((strapi as any).container && typeof (strapi as any).container.get === 'function') {
+          newsCronJobService = (strapi as any).container.get('newsCronJobService');
+        }
+      } catch (error) {
+        strapi.log.warn('Failed to get NewsCronJobService from container:', error);
+      }
       
+      // Fallback to global variable
+      if (!newsCronJobService && (global as any).newsCronJobService) {
+        newsCronJobService = (global as any).newsCronJobService;
+      }
+      
+      // Last resort: create new instance
       if (!newsCronJobService) {
-        strapi.log.error('NewsCronJobService not found in container');
-        return ctx.internalServerError('News service not available');
+        strapi.log.warn('Creating new NewsCronJobService instance as fallback');
+        newsCronJobService = new NewsCronJobService();
       }
       
       newsCronJobService.startAllJobs();
@@ -108,11 +147,25 @@ export default ({ strapi }: { strapi: Core.Strapi }) => ({
    */
   async stopJobs(ctx) {
     try {
-      const newsCronJobService = (strapi as any).container.get('newsCronJobService');
+      // Get NewsCronJobService with fallback mechanism
+      let newsCronJobService;
+      try {
+        if ((strapi as any).container && typeof (strapi as any).container.get === 'function') {
+          newsCronJobService = (strapi as any).container.get('newsCronJobService');
+        }
+      } catch (error) {
+        strapi.log.warn('Failed to get NewsCronJobService from container:', error);
+      }
       
+      // Fallback to global variable
+      if (!newsCronJobService && (global as any).newsCronJobService) {
+        newsCronJobService = (global as any).newsCronJobService;
+      }
+      
+      // Last resort: create new instance
       if (!newsCronJobService) {
-        strapi.log.error('NewsCronJobService not found in container');
-        return ctx.internalServerError('News service not available');
+        strapi.log.warn('Creating new NewsCronJobService instance as fallback');
+        newsCronJobService = new NewsCronJobService();
       }
       
       newsCronJobService.stopAllJobs();

@@ -1,5 +1,6 @@
 import type { Core } from '@strapi/strapi';
 import NewsCronJobService from './services/news-cron-job';
+import GoogleNewsFeedService from './services/google-news-feed';
 
 export default {
   /**
@@ -9,17 +10,22 @@ export default {
    * This gives you an opportunity to extend code.
    */
   register({ strapi }: { strapi: Core.Strapi }) {
-    // Register the news cron job service globally
+    // Register services globally
     try {
       if ((strapi as any).container && typeof (strapi as any).container.register === 'function') {
+        // Register GoogleNewsFeedService first
+        (strapi as any).container.register('googleNewsFeedService', () => new GoogleNewsFeedService());
+        // Register NewsCronJobService
         (strapi as any).container.register('newsCronJobService', () => new NewsCronJobService());
       } else {
-        // Fallback: store the service in a global variable if container is not available
+        // Fallback: store services in global variables if container is not available
+        (global as any).googleNewsFeedService = new GoogleNewsFeedService();
         (global as any).newsCronJobService = new NewsCronJobService();
       }
     } catch (error) {
-      console.error('Failed to register NewsCronJobService:', error);
-      // Fallback: store the service in a global variable
+      console.error('Failed to register services:', error);
+      // Fallback: store services in global variables
+      (global as any).googleNewsFeedService = new GoogleNewsFeedService();
       (global as any).newsCronJobService = new NewsCronJobService();
     }
   },
