@@ -25,25 +25,25 @@ class NewsCronJobService {
     const allCategories = ['Politics', 'Economy', 'World', 'Security', 'Law', 'Science', 'Society', 'Culture', 'Sport'];
     
     return {
-      // Every 30 minutes - fetch ALL categories with moderate article count
+      // Every 2 hours - PRIMARY JOB - fetch ALL categories with optimal article count
       allCategoriesMain: {
-        schedule: '*/30 * * * *',
-        categories: allCategories,
-        maxArticlesPerCategory: 3,
-        enabled: true
-      },
-      // Every 2 hours - fetch ALL categories with higher article count for comprehensive coverage
-      allCategoriesExtended: {
         schedule: '0 */2 * * *',
         categories: allCategories,
         maxArticlesPerCategory: 5,
         enabled: true
       },
-      // Every 6 hours - fetch ALL categories with maximum article count for deep coverage
-      allCategoriesDeep: {
+      // Every 6 hours - fetch ALL categories with higher article count for comprehensive coverage
+      allCategoriesExtended: {
         schedule: '0 */6 * * *',
         categories: allCategories,
         maxArticlesPerCategory: 8,
+        enabled: true
+      },
+      // Every 12 hours - fetch ALL categories with maximum article count for deep coverage
+      allCategoriesDeep: {
+        schedule: '0 */12 * * *',
+        categories: allCategories,
+        maxArticlesPerCategory: 10,
         enabled: true
       }
     };

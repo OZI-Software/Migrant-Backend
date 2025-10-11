@@ -17,27 +17,36 @@
   "dependencies": {
     "@getbrevo/brevo": "^3.0.1",
     "@google/generative-ai": "^0.24.1",
+    "@mozilla/readability": "^0.6.0",
     "@strapi/plugin-cloud": "5.23.0",
     "@strapi/plugin-documentation": "^5.23.2",
     "@strapi/plugin-users-permissions": "5.23.0",
     "@strapi/strapi": "5.23.0",
     "axios": "^1.12.2",
     "better-sqlite3": "11.3.0",
+    "cheerio": "^1.1.2",
+    "jsdom": "^27.0.0",
     "node-cron": "^4.2.1",
     "pg": "^8.16.3",
+    "puppeteer": "^24.24.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-router-dom": "^6.0.0",
     "rss-parser": "^3.13.0",
+    "sharp": "^0.34.4",
     "strapi-google-analytics-dashboard": "^0.0.2",
     "strapi-provider-email-brevo": "^1.0.4",
-    "styled-components": "^6.0.0"
+    "styled-components": "^6.0.0",
+    "turndown": "^7.2.1"
   },
   "devDependencies": {
+    "@types/jsdom": "^27.0.0",
     "@types/node": "^20",
     "@types/node-cron": "^3.0.11",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/sharp": "^0.31.1",
+    "ts-node": "^10.9.2",
     "typescript": "^5"
   },
   "engines": {

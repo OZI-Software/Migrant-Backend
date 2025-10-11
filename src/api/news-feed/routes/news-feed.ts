@@ -40,5 +40,15 @@ export default {
         auth: false,
       },
     },
+    {
+      method: 'POST',
+      path: '/news-feed/test-ai-extraction',
+      handler: 'news-feed.testAiExtraction',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false,
+      },
+    },
   ],
 };

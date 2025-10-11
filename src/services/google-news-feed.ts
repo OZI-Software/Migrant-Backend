@@ -1,5 +1,9 @@
 import Parser = require('rss-parser');
 import axios from 'axios';
+import { EnhancedArticleExtractor } from './enhanced-article-extractor';
+import { ImageOptimizer } from './image-optimizer';
+import { ContentFallbackService } from './content-fallback';
+import AIContentExtractor from './ai-content-extractor';
 
 interface GoogleNewsItem {
   title: string;
@@ -10,6 +14,25 @@ interface GoogleNewsItem {
   guid: string;
   source?: string;
   description?: string;
+}
+
+interface OptimizedImage {
+  url: string;
+  alt: string;
+  score: number;
+  width?: number;
+  height?: number;
+  format?: string;
+  size?: number;
+}
+
+interface ExtractionResult {
+  content: string;
+  images: OptimizedImage[];
+  extractionMethod: string;
+  wordCount: number;
+  contentQuality: 'excellent' | 'good' | 'fair' | 'poor';
+  processingTime: number;
 }
 
 interface ParsedNewsItem {
@@ -25,19 +48,71 @@ interface ParsedNewsItem {
   seoDescription: string;
   isBreaking: boolean;
   imageUrl?: string;
+  images?: OptimizedImage[];
   tags?: string[];
+  extractionResult?: ExtractionResult;
 }
 
 class GoogleNewsFeedService {
   private parser: Parser;
   private readonly baseUrl = 'https://news.google.com/rss';
+  private articleExtractor: EnhancedArticleExtractor;
+  private imageOptimizer: ImageOptimizer;
+  private fallbackService: ContentFallbackService;
+  private aiContentExtractor: AIContentExtractor;
+  private strapi: any;
+  private processingStats: {
+    totalProcessed: number;
+    successfulExtractions: number;
+    failedExtractions: number;
+    averageProcessingTime: number;
+    totalProcessingTime: number;
+    totalImages: number;
+    articlesWithImages: number;
+    averageImageScore: number;
+    imageExtractionStats: {
+      totalImages: number;
+      optimizedImages: number;
+      averageScore: number;
+    };
+  };
 
-  constructor() {
+  constructor(strapiInstance?: any) {
+    // Set strapi instance - use provided instance or global strapi
+    this.strapi = strapiInstance || (global as any).strapi;
+    
     this.parser = new Parser({
       customFields: {
         item: ['source']
+      },
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
     });
+    this.articleExtractor = new EnhancedArticleExtractor(this.strapi);
+    this.imageOptimizer = new ImageOptimizer(this.strapi);
+    this.fallbackService = new ContentFallbackService(this.strapi);
+    this.aiContentExtractor = new AIContentExtractor(this.strapi);
+    
+    // Initialize processing statistics
+    this.processingStats = {
+      totalProcessed: 0,
+      successfulExtractions: 0,
+      failedExtractions: 0,
+      averageProcessingTime: 0,
+      totalProcessingTime: 0,
+      totalImages: 0,
+      articlesWithImages: 0,
+      averageImageScore: 0,
+      imageExtractionStats: {
+        totalImages: 0,
+        optimizedImages: 0,
+        averageScore: 0
+      }
+    };
+    
+    this.strapi.log.info('🚀 Enhanced Google News Feed Service initialized with advanced extraction capabilities');
   }
 
   /**
@@ -47,7 +122,7 @@ class GoogleNewsFeedService {
     const feedUrls = {
       Politics: `${this.baseUrl}/search?q=politics+government+election&hl=en-US&gl=US&ceid=US:en`,
       Economy: `${this.baseUrl}/search?q=economy+business+finance+market&hl=en-US&gl=US&ceid=US:en`,
-      World: `${this.baseUrl}/search?q=world+international+global&hl=en-US&gl=US&ceid=US:en`,
+      World: `${this.baseUrl}/search?q=world+global&hl=en-US&gl=US&ceid=US:en`,
       Security: `${this.baseUrl}/search?q=security+defense+military+terrorism&hl=en-US&gl=US&ceid=US:en`,
       Law: `${this.baseUrl}/search?q=law+legal+court+justice&hl=en-US&gl=US&ceid=US:en`,
       Science: `${this.baseUrl}/search?q=science+research+technology&hl=en-US&gl=US&ceid=US:en`,
@@ -68,7 +143,7 @@ class GoogleNewsFeedService {
     const feedUrl = feedUrls[category] || feedUrls['World'];
 
     try {
-      strapi.log.info(`Fetching Google News feed for category: ${category}`);
+      this.strapi.log.info(`Fetching Google News feed for category: ${category}`);
       
       const feed = await this.parser.parseURL(feedUrl);
       
@@ -87,11 +162,11 @@ class GoogleNewsFeedService {
       // Filter out low-quality content and PDFs
       const qualityItems = allItems.filter(item => this.isQualityContent(item));
       
-      strapi.log.info(`Filtered ${allItems.length - qualityItems.length} low-quality items from ${allItems.length} total items for category: ${category}`);
+      this.strapi.log.info(`Filtered ${allItems.length - qualityItems.length} low-quality items from ${allItems.length} total items for category: ${category}`);
       
       return qualityItems;
     } catch (error) {
-      strapi.log.error('Error fetching Google News feed:', error);
+      this.strapi.log.error('Error fetching Google News feed:', error);
       throw new Error(`Failed to fetch Google News feed: ${error.message}`);
     }
   }
@@ -441,7 +516,7 @@ class GoogleNewsFeedService {
           // Validate if it's a proper image URL
           if (imageUrl.match(/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) && 
               imageUrl.startsWith('http')) {
-            strapi.log.debug(`Found image URL: ${imageUrl}`);
+            this.strapi.log.debug(`Found image URL: ${imageUrl}`);
             return imageUrl;
           }
         }
@@ -449,10 +524,10 @@ class GoogleNewsFeedService {
 
       // If no image found in content, return null to skip image upload
       // This avoids network issues with external placeholder services
-      strapi.log.debug(`No image found in content for article: ${title}, skipping image`);
+      this.strapi.log.debug(`No image found in content for article: ${title}, skipping image`);
       return null;
     } catch (error) {
-      strapi.log.warn('Error extracting image URL:', error);
+      this.strapi.log.warn('Error extracting image URL:', error);
       return null;
     }
   }
@@ -471,6 +546,87 @@ class GoogleNewsFeedService {
       .slice(0, 3); // Take first 3 meaningful words
     
     return words.join(',') || 'news';
+  }
+
+  /**
+   * Remove author names from text (titles and excerpts)
+   */
+  private removeAuthorFromText(text: string): string {
+    if (!text) return text;
+    
+    // Common patterns for author attribution
+    const authorPatterns = [
+      /^By\s+[A-Z][a-z]+\s+[A-Z][a-z]+\s*[-|–—]\s*/i,  // "By John Smith - "
+      /^By\s+[A-Z][a-z]+\s+[A-Z][a-z]+\s*:\s*/i,       // "By John Smith: "
+      /^[A-Z][a-z]+\s+[A-Z][a-z]+\s*[-|–—]\s*/,        // "John Smith - "
+      /^[A-Z][a-z]+\s+[A-Z][a-z]+\s*:\s*/,             // "John Smith: "
+      /\s*[-|–—]\s*By\s+[A-Z][a-z]+\s+[A-Z][a-z]+$/i,  // " - By John Smith"
+      /\s*\|\s*By\s+[A-Z][a-z]+\s+[A-Z][a-z]+$/i,      // " | By John Smith"
+      /\s*,\s*By\s+[A-Z][a-z]+\s+[A-Z][a-z]+$/i,       // ", By John Smith"
+      /\s*\(\s*By\s+[A-Z][a-z]+\s+[A-Z][a-z]+\s*\)$/i, // " (By John Smith)"
+    ];
+    
+    let cleanedText = text;
+    
+    for (const pattern of authorPatterns) {
+      cleanedText = cleanedText.replace(pattern, '').trim();
+    }
+    
+    return cleanedText;
+  }
+
+  /**
+   * Extract location information from article content
+   */
+  private extractLocationFromContent(content: string): string {
+    if (!content) return '';
+    
+    try {
+      // Remove HTML tags for text analysis
+      const textContent = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      
+      // Common location patterns
+      const locationPatterns = [
+        // City, State/Country patterns
+        /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*),\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b/g,
+        // Dateline patterns (CITY - content)
+        /^([A-Z][A-Z\s]+)\s*[-–—]\s*/,
+        // Location mentions with prepositions
+        /\bin\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*(?:,\s*[A-Z][a-z]+)*)\b/g,
+        /\bfrom\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*(?:,\s*[A-Z][a-z]+)*)\b/g,
+        /\bat\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*(?:,\s*[A-Z][a-z]+)*)\b/g,
+      ];
+      
+      const locations = new Set<string>();
+      
+      for (const pattern of locationPatterns) {
+        let match;
+        while ((match = pattern.exec(textContent)) !== null) {
+          const location = match[1]?.trim();
+          if (location && location.length > 2 && location.length < 50) {
+            // Filter out common non-location words
+            const nonLocations = ['United States', 'America', 'Europe', 'Asia', 'Africa', 'North', 'South', 'East', 'West', 'News', 'Report', 'Today', 'Yesterday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            if (!nonLocations.some(nl => location.toLowerCase().includes(nl.toLowerCase()))) {
+              locations.add(location);
+            }
+          }
+        }
+      }
+      
+      // Return the first valid location found
+      const locationArray = Array.from(locations);
+      if (locationArray.length > 0) {
+        this.strapi.log.debug(`Extracted location: ${locationArray[0]}`);
+        return locationArray[0];
+      }
+      
+      this.strapi.log.debug('No location found in content');
+      return '';
+      
+    } catch (error) {
+      this.strapi.log.warn('Error extracting location:', error);
+      return '';
+    }
   }
 
   /**
@@ -574,136 +730,359 @@ class GoogleNewsFeedService {
   }
 
   /**
-   * Fetch full article content from source URL
+   * Fetch full article content from source URL with comprehensive extraction and optimization
    */
-  private async fetchFullContent(sourceUrl: string): Promise<string> {
+  private async fetchFullContent(sourceUrl: string, rssItem?: GoogleNewsItem): Promise<ExtractionResult> {
+    const startTime = Date.now();
+    
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      this.strapi.log.info(`🔍 Starting enhanced content extraction from: ${sourceUrl}`);
       
-      const response = await fetch(sourceUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        },
-        signal: controller.signal
-      });
+      // Extract article content using enhanced extractor
+      const extractedData = await this.articleExtractor.extractArticleContentWithRSS(sourceUrl, rssItem);
       
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const html = await response.text();
+      let optimizedImages: OptimizedImage[] = [];
+      let contentQuality: 'excellent' | 'good' | 'fair' | 'poor' = 'poor';
       
-      // Extract main content using common article selectors with improved regex
-      const contentSelectors = [
-        { selector: 'article', regex: /<article[^>]*>(.*?)<\/article>/gis },
-        { selector: '[role="main"]', regex: /<[^>]*role\s*=\s*["\']main["\'][^>]*>(.*?)<\/[^>]*>/gis },
-        { selector: '.article-content', regex: /<[^>]*class[^>]*article-content[^>]*>(.*?)<\/[^>]*>/gis },
-        { selector: '.post-content', regex: /<[^>]*class[^>]*post-content[^>]*>(.*?)<\/[^>]*>/gis },
-        { selector: '.entry-content', regex: /<[^>]*class[^>]*entry-content[^>]*>(.*?)<\/[^>]*>/gis },
-        { selector: '.content', regex: /<[^>]*class[^>]*\bcontent\b[^>]*>(.*?)<\/[^>]*>/gis },
-        { selector: '.story-body', regex: /<[^>]*class[^>]*story-body[^>]*>(.*?)<\/[^>]*>/gis },
-        { selector: '.article-body', regex: /<[^>]*class[^>]*article-body[^>]*>(.*?)<\/[^>]*>/gis },
-        { selector: 'main', regex: /<main[^>]*>(.*?)<\/main>/gis },
-        { selector: '#content', regex: /<[^>]*id\s*=\s*["\']content["\'][^>]*>(.*?)<\/[^>]*>/gis },
-        { selector: '.main-content', regex: /<[^>]*class[^>]*main-content[^>]*>(.*?)<\/[^>]*>/gis }
-      ];
-
-      // Extract content with improved parsing
-      let extractedContent = '';
-      for (const { selector, regex } of contentSelectors) {
-        const matches = html.match(regex);
-        if (matches && matches.length > 0) {
-          // Get the longest match (most likely to be the main content)
-          extractedContent = matches.reduce((longest, current) => 
-            current.length > longest.length ? current : longest, '');
+      if (extractedData.success && extractedData.content.length > 200) {
+        this.strapi.log.info(`✅ Content extraction successful using ${extractedData.extractionMethod}`);
+        this.strapi.log.info(`📊 Content stats: ${extractedData.wordCount} words, ${extractedData.images.length} raw images`);
+        
+        // Optimize and score images
+        if (extractedData.images && extractedData.images.length > 0) {
+          this.strapi.log.info(`🖼️  Processing ${extractedData.images.length} images for optimization...`);
           
-          // Extract the content part (remove the outer tags)
-          const contentMatch = extractedContent.match(/>([^]*)<\/[^>]*>$/);
-          if (contentMatch && contentMatch[1]) {
-            extractedContent = contentMatch[1];
-            
-            // Ensure paragraph structure is preserved
-            extractedContent = extractedContent
-              .replace(/<\/p>\s*<p[^>]*>/gi, '</p>\n\n<p>') // Add line breaks between paragraphs
-              .replace(/<\/h[1-6]>\s*<p[^>]*>/gi, (match) => match.replace(/>\s*</, '>\n\n<')) // Add breaks after headings
-              .replace(/<\/div>\s*<div[^>]*>/gi, '</div>\n<div>'); // Add breaks between divs
-            
-            break;
+          // Optimize all images at once
+          const optimizedImageResults = await this.imageOptimizer.optimizeImages(extractedData.images, extractedData.content);
+          
+          // Convert quality to score and collect valid images
+          const validImages = [];
+          for (const optimizedImage of optimizedImageResults) {
+            if (optimizedImage && optimizedImage.metadata.isValid) {
+              // Convert quality to numeric score
+              const qualityScore = optimizedImage.metadata.quality === 'high' ? 90 : 
+                                 optimizedImage.metadata.quality === 'medium' ? 60 : 30;
+              
+              validImages.push({
+                url: optimizedImage.originalUrl,
+                alt: optimizedImage.metadata.alt || '',
+                score: qualityScore,
+                width: optimizedImage.metadata.width,
+                height: optimizedImage.metadata.height,
+                format: optimizedImage.metadata.format || 'webp',
+                size: optimizedImage.metadata.size || 0
+              });
+              
+              this.strapi.log.debug(`   ✅ Image optimized: ${optimizedImage.originalUrl} (quality: ${optimizedImage.metadata.quality})`);
+            }
+          }
+          
+          // Sort images by score and take only the best one for article creation
+          validImages.sort((a, b) => b.score - a.score);
+          if (validImages.length > 0) {
+            optimizedImages.push(validImages[0]); // Take only the best image
+          }
+          
+          this.strapi.log.info(`🎯 Image optimization complete: ${optimizedImages.length} optimized images`);
+          if (optimizedImages.length > 0) {
+            const avgScore = optimizedImages.reduce((sum, img) => sum + img.score, 0) / optimizedImages.length;
+            this.strapi.log.info(`📈 Average image score: ${avgScore.toFixed(1)}`);
           }
         }
-      }
-
-      // If no specific content found, extract from body but filter out navigation/footer
-      if (!extractedContent) {
-        const bodyMatch = html.match(/<body[^>]*>(.*?)<\/body>/gis);
-        if (bodyMatch && bodyMatch[1]) {
-          extractedContent = bodyMatch[1]
-            .replace(/<nav[^>]*>.*?<\/nav>/gis, '')
-            .replace(/<header[^>]*>.*?<\/header>/gis, '')
-            .replace(/<footer[^>]*>.*?<\/footer>/gis, '')
-            .replace(/<aside[^>]*>.*?<\/aside>/gis, '')
-            .replace(/<div[^>]*class[^>]*(?:sidebar|menu|navigation)[^>]*>.*?<\/div>/gis, '');
+        
+        // Assess content quality
+        contentQuality = this.assessContentQuality(extractedData.content, optimizedImages.length);
+        
+        // Update processing statistics
+        this.updateProcessingStats(true, Date.now() - startTime, optimizedImages);
+        
+        this.strapi.log.info(`🏆 Content quality assessment: ${contentQuality.toUpperCase()}`);
+        
+        return {
+          content: extractedData.content,
+          images: optimizedImages,
+          extractionMethod: extractedData.extractionMethod,
+          wordCount: extractedData.wordCount,
+          contentQuality,
+          processingTime: Date.now() - startTime
+        };
+      } else {
+        this.strapi.log.warn(`❌ Content extraction failed or insufficient content: ${extractedData.extractionMethod}`);
+        
+        // Try fallback service
+        this.strapi.log.info(`🔄 Attempting fallback content recovery...`);
+        const fallbackResult = await this.fallbackService.recoverContent(sourceUrl, rssItem);
+        
+        if (fallbackResult.content && fallbackResult.content.length > 100) {
+          this.strapi.log.info(`✅ Fallback recovery successful: ${fallbackResult.content.length} characters`);
+          contentQuality = 'fair';
+        } else {
+          this.strapi.log.warn(`❌ Fallback recovery also failed`);
+          contentQuality = 'poor';
         }
+        
+        this.updateProcessingStats(false, Date.now() - startTime, []);
+        
+        return {
+          content: fallbackResult.content || extractedData.content || '',
+          images: [],
+          extractionMethod: fallbackResult.content ? 'fallback' : extractedData.extractionMethod,
+          wordCount: fallbackResult.content ? fallbackResult.content.split(' ').length : 0,
+          contentQuality,
+          processingTime: Date.now() - startTime
+        };
       }
-
-      // Clean up the extracted content but preserve images
-      if (extractedContent) {
-        extractedContent = this.cleanExtractedContent(extractedContent);
-      }
-
-      return extractedContent || '';
     } catch (error) {
-      strapi.log.warn(`Failed to fetch full content from ${sourceUrl}: ${error.message}`);
-      return '';
+      this.strapi.log.error(`💥 Error extracting content from ${sourceUrl}:`, error);
+      this.updateProcessingStats(false, Date.now() - startTime, []);
+      
+      return {
+        content: '',
+        images: [],
+        extractionMethod: 'error',
+        wordCount: 0,
+        contentQuality: 'poor',
+        processingTime: Date.now() - startTime
+      };
     }
   }
 
   /**
-   * Clean extracted content while preserving images and important formatting
+   * AI-powered content extraction with fallback to enhanced extraction
+   */
+  private async fetchContentWithAI(sourceUrl: string, rssItem?: GoogleNewsItem): Promise<ExtractionResult> {
+    const startTime = Date.now();
+    
+    try {
+      this.strapi.log.info(`🤖 Starting AI-powered content extraction from: ${sourceUrl}`);
+      
+      // First, get the raw HTML content
+      let rawHtml = '';
+      try {
+        const response = await axios.get(sourceUrl, {
+          timeout: 15000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+          }
+        });
+        rawHtml = response.data;
+      } catch (fetchError) {
+        this.strapi.log.warn(`❌ Failed to fetch raw HTML: ${fetchError.message}`);
+        // Fallback to enhanced extraction if we can't get raw HTML
+        return await this.fetchFullContent(sourceUrl, rssItem);
+      }
+
+      // Use AI to extract structured content
+      const aiResult = await this.aiContentExtractor.extractWithFallback(rawHtml, sourceUrl);
+      
+      if (aiResult.success && aiResult.data) {
+        this.strapi.log.info(`✅ AI extraction successful in ${aiResult.processingTime}ms`);
+        this.strapi.log.info(`📊 AI extracted: ${aiResult.data.title}`);
+        this.strapi.log.info(`📝 Content: ${aiResult.data.content.length} chars`);
+        this.strapi.log.info(`🏷️  Tags: ${aiResult.data.tags.length} tags`);
+        this.strapi.log.info(`🖼️  Images: ${aiResult.data.images.length} images`);
+        
+        // Convert AI extracted images to OptimizedImage format
+        const optimizedImages: OptimizedImage[] = aiResult.data.images.map((img, index) => ({
+          url: img.url,
+          alt: img.alt || `Image ${index + 1}`,
+          score: 0.8, // AI-extracted images get a good score
+          width: undefined,
+          height: undefined,
+          format: undefined,
+          size: undefined
+        }));
+
+        // Assess content quality based on AI extraction
+        const contentQuality = this.assessAIContentQuality(aiResult.data);
+        
+        this.updateProcessingStats(true, aiResult.processingTime, optimizedImages);
+        
+        return {
+          content: aiResult.data.content,
+          images: optimizedImages,
+          extractionMethod: 'AI (Gemini)',
+          wordCount: aiResult.data.content.replace(/<[^>]*>/g, '').split(' ').length,
+          contentQuality,
+          processingTime: aiResult.processingTime
+        };
+      } else {
+        this.strapi.log.warn(`❌ AI extraction failed: ${aiResult.error}`);
+        this.strapi.log.info(`🔄 Falling back to enhanced extraction...`);
+        
+        // Fallback to the existing enhanced extraction method
+        return await this.fetchFullContent(sourceUrl, rssItem);
+      }
+      
+    } catch (error) {
+      this.strapi.log.error(`💥 Error in AI content extraction from ${sourceUrl}:`, error);
+      this.strapi.log.info(`🔄 Falling back to enhanced extraction...`);
+      
+      // Fallback to the existing enhanced extraction method
+      return await this.fetchFullContent(sourceUrl, rssItem);
+    }
+  }
+
+  /**
+   * Assess content quality for AI-extracted content
+   */
+  private assessAIContentQuality(aiData: any): 'excellent' | 'good' | 'fair' | 'poor' {
+    const wordCount = aiData.content.replace(/<[^>]*>/g, '').split(' ').length;
+    const hasImages = aiData.images && aiData.images.length > 0;
+    const hasTags = aiData.tags && aiData.tags.length > 0;
+    const hasLocation = aiData.location && aiData.location.length > 0;
+    const hasMetadata = aiData.metadata && Object.keys(aiData.metadata).length > 0;
+    
+    // AI extraction provides more structured data, so we can be more sophisticated
+    if (wordCount >= 500 && hasImages && hasTags && (hasLocation || hasMetadata)) return 'excellent';
+    if (wordCount >= 300 && (hasImages || hasTags)) return 'good';
+    if (wordCount >= 150) return 'fair';
+    return 'poor';
+  }
+
+  /**
+   * Assess content quality based on length and image count
+   */
+  private assessContentQuality(content: string, imageCount: number): 'excellent' | 'good' | 'fair' | 'poor' {
+    const wordCount = content.split(' ').length;
+    
+    if (wordCount >= 500 && imageCount >= 3) return 'excellent';
+    if (wordCount >= 300 && imageCount >= 1) return 'good';
+    if (wordCount >= 150) return 'fair';
+    return 'poor';
+  }
+
+  /**
+   * Update processing statistics for monitoring
+   */
+  private updateProcessingStats(success: boolean, processingTime: number, images: OptimizedImage[]) {
+    this.processingStats.totalProcessed++;
+    
+    if (success) {
+      this.processingStats.successfulExtractions++;
+      this.processingStats.totalImages += images.length;
+      this.processingStats.totalProcessingTime += processingTime;
+      
+      if (images.length > 0) {
+        this.processingStats.articlesWithImages++;
+        const avgScore = images.reduce((sum, img) => sum + img.score, 0) / images.length;
+        this.processingStats.averageImageScore = 
+          (this.processingStats.averageImageScore * (this.processingStats.articlesWithImages - 1) + avgScore) / 
+          this.processingStats.articlesWithImages;
+      }
+    } else {
+      this.processingStats.failedExtractions++;
+    }
+  }
+
+  /**
+   * Get processing statistics for monitoring
+   */
+  public getProcessingStats() {
+    return {
+      ...this.processingStats,
+      successRate: this.processingStats.totalProcessed > 0 
+        ? (this.processingStats.successfulExtractions / this.processingStats.totalProcessed * 100).toFixed(2) + '%'
+        : '0%',
+      averageProcessingTime: this.processingStats.successfulExtractions > 0
+        ? Math.round(this.processingStats.totalProcessingTime / this.processingStats.successfulExtractions)
+        : 0
+    };
+  }
+
+  /**
+   * Clean extracted content by removing all unwanted HTML tags and preserving only text content
    */
   private cleanExtractedContent(content: string): string {
     if (!content) return '';
 
     let cleanedContent = content;
 
-    // Remove script and style tags
-    cleanedContent = cleanedContent.replace(/<script[^>]*>.*?<\/script>/gis, '');
-    cleanedContent = cleanedContent.replace(/<style[^>]*>.*?<\/style>/gis, '');
-    
-    // Remove ads and social media embeds
-    cleanedContent = cleanedContent.replace(/<[^>]*class[^>]*(?:ad|advertisement|social|share|comment)[^>]*>.*?<\/[^>]*>/gis, '');
-    
-    // Remove navigation elements
-    cleanedContent = cleanedContent.replace(/<nav[^>]*>.*?<\/nav>/gis, '');
-    cleanedContent = cleanedContent.replace(/<[^>]*class[^>]*(?:nav|menu|breadcrumb)[^>]*>.*?<\/[^>]*>/gis, '');
-    
-    // Remove footer and sidebar content
-    cleanedContent = cleanedContent.replace(/<footer[^>]*>.*?<\/footer>/gis, '');
-    cleanedContent = cleanedContent.replace(/<aside[^>]*>.*?<\/aside>/gis, '');
-    cleanedContent = cleanedContent.replace(/<[^>]*class[^>]*(?:sidebar|footer)[^>]*>.*?<\/[^>]*>/gis, '');
+    // First, remove all unwanted elements completely (including their content)
+    const unwantedElements = [
+      'script', 'style', 'noscript', 'meta', 'link', 'head', 'title',
+      'nav', 'header', 'footer', 'aside', 'menu',
+      'img', 'picture', 'figure', 'svg', 'video', 'audio', 'iframe', 'embed', 'object',
+      'form', 'input', 'button', 'select', 'textarea',
+      'canvas', 'map', 'area'
+    ];
 
-    // Preserve images but ensure they have proper attributes
-    cleanedContent = cleanedContent.replace(/<img([^>]*)>/gi, (match, attributes) => {
-      // Ensure images have alt text
-      if (!attributes.includes('alt=')) {
-        attributes += ' alt="Article image"';
-      }
-      // Ensure images have proper styling
-      if (!attributes.includes('style=') && !attributes.includes('class=')) {
-        attributes += ' style="max-width: 100%; height: auto; margin: 10px 0;"';
-      }
-      return `<img${attributes}>`;
+    unwantedElements.forEach(tag => {
+      // Remove self-closing tags
+      cleanedContent = cleanedContent.replace(new RegExp(`<${tag}[^>]*\/?>`, 'gis'), '');
+      // Remove paired tags with content
+      cleanedContent = cleanedContent.replace(new RegExp(`<${tag}[^>]*>.*?<\/${tag}>`, 'gis'), '');
     });
 
-    // Clean up excessive whitespace but preserve line breaks and paragraph structure
+    // Remove all links (a tags) but preserve their text content
+    cleanedContent = cleanedContent.replace(/<a[^>]*>(.*?)<\/a>/gis, '$1');
+    
+    // Remove all span tags but preserve their text content
+    cleanedContent = cleanedContent.replace(/<span[^>]*>(.*?)<\/span>/gis, '$1');
+    
+    // Remove all div tags but preserve their text content (convert to paragraphs if they contain substantial text)
+    cleanedContent = cleanedContent.replace(/<div[^>]*>(.*?)<\/div>/gis, (match, content) => {
+      const textContent = content.replace(/<[^>]*>/g, '').trim();
+      return textContent.length > 20 ? `<p>${content}</p>` : content;
+    });
+
+    // Remove elements with specific classes/attributes that indicate unwanted content
+    const unwantedPatterns = [
+      /<[^>]*class[^>]*(?:subscribe|signup|newsletter|promotion|cta|call-to-action|advertisement|ad-|social|share|comment|related|recommended|sidebar|footer|nav|menu|breadcrumb|widget|popup|modal|overlay)[^>]*>.*?<\/[^>]*>/gis,
+      /<[^>]*(?:data-track|data-analytics|data-ad|onclick|onload)[^>]*>.*?<\/[^>]*>/gis,
+      /<[^>]*id[^>]*(?:ad|advertisement|social|share|comment|sidebar|footer|nav|menu)[^>]*>.*?<\/[^>]*>/gis
+    ];
+
+    unwantedPatterns.forEach(pattern => {
+      cleanedContent = cleanedContent.replace(pattern, '');
+    });
+
+    // Remove HTML comments
+    cleanedContent = cleanedContent.replace(/<!--.*?-->/gs, '');
+
+    // Clean up attributes from allowed tags, keeping only essential semantic tags
+    const allowedTags = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'strong', 'em', 'b', 'i', 'br'];
+    
+    // Remove all attributes from allowed tags to keep them clean
+    allowedTags.forEach(tag => {
+      cleanedContent = cleanedContent.replace(new RegExp(`<${tag}[^>]*>`, 'gis'), `<${tag}>`);
+    });
+
+    // Remove any remaining HTML tags that are not in our allowed list
+    // This regex matches any HTML tag that's not in our allowed list
+    const allowedTagsPattern = allowedTags.join('|');
+    cleanedContent = cleanedContent.replace(
+      new RegExp(`<(?!\/?(?:${allowedTagsPattern})(?:\s|>))[^>]*>`, 'gis'), 
+      ''
+    );
+
+    // Convert multiple br tags to paragraph breaks
+    cleanedContent = cleanedContent.replace(/<br>\s*<br>/gi, '</p><p>');
+    cleanedContent = cleanedContent.replace(/<br>/gi, ' ');
+
+    // Clean up empty tags
+    cleanedContent = cleanedContent.replace(/<(p|h[1-6]|blockquote|li)>\s*<\/\1>/gi, '');
+    
+    // Ensure content is wrapped in paragraphs if it's not already structured
+    if (cleanedContent && !cleanedContent.match(/<(p|h[1-6]|blockquote|ul|ol)/i)) {
+      cleanedContent = `<p>${cleanedContent}</p>`;
+    }
+
+    // Clean up excessive whitespace while preserving paragraph structure
     cleanedContent = cleanedContent
-      .replace(/[ \t]+/g, ' ') // Replace multiple spaces/tabs with single space
-      .replace(/\n\s*\n\s*\n+/g, '\n\n') // Replace multiple newlines with double newline
-      .replace(/^\s+|\s+$/g, '') // Trim start and end
+      .replace(/\s+/g, ' ') // Replace multiple whitespace with single space
+      .replace(/>\s+</g, '><') // Remove spaces between tags
+      .replace(/\s+>/g, '>') // Remove spaces before closing brackets
+      .replace(/<\s+/g, '<') // Remove spaces after opening brackets
       .trim();
+
+    // Final cleanup: remove any remaining empty paragraphs or headers
+    cleanedContent = cleanedContent.replace(/<(p|h[1-6]|blockquote)>\s*<\/\1>/gi, '');
     
     return cleanedContent;
   }
@@ -805,13 +1184,13 @@ class GoogleNewsFeedService {
     
     // Exclude PDFs
     if (link.includes('.pdf') || title.includes('.pdf') || description.includes('pdf')) {
-      strapi.log.debug(`Excluding PDF content: ${item.title}`);
+      this.strapi.log.debug(`Excluding PDF content: ${item.title}`);
       return false;
     }
     
     // Exclude very short titles (likely not substantial articles)
     if (title.length < 20) {
-      strapi.log.debug(`Excluding short title: ${item.title}`);
+      this.strapi.log.debug(`Excluding short title: ${item.title}`);
       return false;
     }
     
@@ -837,14 +1216,14 @@ class GoogleNewsFeedService {
     
     for (const indicator of lowQualityIndicators) {
       if (title.includes(indicator) || description.includes(indicator)) {
-        strapi.log.debug(`Excluding low-quality content (${indicator}): ${item.title}`);
+        this.strapi.log.debug(`Excluding low-quality content (${indicator}): ${item.title}`);
         return false;
       }
     }
     
     // Exclude articles with very short descriptions
     if (description && description.length < 50) {
-      strapi.log.debug(`Excluding article with short description: ${item.title}`);
+      this.strapi.log.debug(`Excluding article with short description: ${item.title}`);
       return false;
     }
     
@@ -861,7 +1240,7 @@ class GoogleNewsFeedService {
     
     for (const domain of socialMediaDomains) {
       if (link.includes(domain)) {
-        strapi.log.debug(`Excluding social media content: ${item.title}`);
+        this.strapi.log.debug(`Excluding social media content: ${item.title}`);
         return false;
       }
     }
@@ -934,7 +1313,7 @@ class GoogleNewsFeedService {
      const properNouns = text.match(properNounPattern) || [];
      
      properNouns.forEach(noun => {
-       const cleanNoun = noun.trim();
+       const cleanNoun = (noun as string).trim();
        // Filter out common words and ensure reasonable length
        if (cleanNoun.length > 2 && 
            cleanNoun.length <= 50 && 
@@ -956,7 +1335,7 @@ class GoogleNewsFeedService {
      for (const tagName of tagNames) {
        try {
          // Check if tag already exists
-         let existingTags = await strapi.entityService.findMany('api::tag.tag', {
+         let existingTags = await this.strapi.entityService.findMany('api::tag.tag', {
            filters: { name: tagName },
            limit: 1
          }) as any[];
@@ -965,14 +1344,14 @@ class GoogleNewsFeedService {
          if (!existingTags || existingTags.length === 0) {
            // Create new tag
            const slug = tagName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-           tag = await strapi.entityService.create('api::tag.tag', {
+           tag = await this.strapi.entityService.create('api::tag.tag', {
              data: {
                name: tagName,
                slug: slug,
                description: `Articles tagged with ${tagName}`
              }
            });
-           strapi.log.debug(`Created new tag: ${tagName}`);
+           this.strapi.log.debug(`Created new tag: ${tagName}`);
          } else {
            tag = existingTags[0];
          }
@@ -981,7 +1360,7 @@ class GoogleNewsFeedService {
            tagIds.push(tag.id);
          }
        } catch (error) {
-         strapi.log.warn(`Failed to create/get tag ${tagName}: ${error.message}`);
+         this.strapi.log.warn(`Failed to create/get tag ${tagName}: ${error.message}`);
        }
      }
 
@@ -1042,39 +1421,16 @@ class GoogleNewsFeedService {
       return this.formatHtmlContent(formattedContent);
     }
 
-    // Remove unwanted elements but preserve structure
-    formattedContent = formattedContent
-      .replace(/<script[^>]*>.*?<\/script>/gi, '') // Remove scripts
-      .replace(/<style[^>]*>.*?<\/style>/gi, '') // Remove styles
-      .replace(/<noscript[^>]*>.*?<\/noscript>/gi, '') // Remove noscript
-      .replace(/<!--.*?-->/gs, '') // Remove comments
-      .replace(/<iframe[^>]*>.*?<\/iframe>/gi, '') // Remove iframes
-      .replace(/<embed[^>]*>.*?<\/embed>/gi, '') // Remove embeds
-      .replace(/<object[^>]*>.*?<\/object>/gi, '') // Remove objects
-      .trim();
+    // Apply comprehensive HTML cleaning using the same logic as cleanExtractedContent
+    formattedContent = this.cleanExtractedContent(formattedContent);
 
     if (preserveHtml) {
-      // Clean up HTML but preserve and enhance formatting tags
-      formattedContent = formattedContent
-        .replace(/<div[^>]*>/gi, '<p>') // Convert divs to paragraphs
-        .replace(/<\/div>/gi, '</p>')
-        .replace(/<span[^>]*>/gi, '') // Remove span tags but keep content
-        .replace(/<\/span>/gi, '')
-        .replace(/<br\s*\/?>/gi, '</p><p>') // Convert breaks to paragraph breaks
-        .replace(/<p>\s*<\/p>/gi, '') // Remove empty paragraphs
-        .replace(/[ \t]+/g, ' ') // Normalize spaces and tabs only
-        .replace(/\n\s*\n\s*\n+/g, '\n\n') // Clean up excessive newlines
-        .trim();
-
       // Enhance content with rich text formatting
       formattedContent = this.enhanceContentWithRichText(formattedContent);
 
-      // Ensure proper paragraph structure
-      if (!formattedContent.startsWith('<p>') && !formattedContent.startsWith('<h')) {
-        formattedContent = '<p>' + formattedContent;
-      }
-      if (!formattedContent.endsWith('</p>') && !formattedContent.endsWith('</blockquote>') && !formattedContent.endsWith('</ul>') && !formattedContent.endsWith('</ol>')) {
-        formattedContent = formattedContent + '</p>';
+      // Ensure proper paragraph structure if content exists but isn't wrapped
+      if (formattedContent && !formattedContent.match(/<(p|h[1-6]|blockquote|ul|ol)/i)) {
+        formattedContent = `<p>${formattedContent}</p>`;
       }
 
       return formattedContent;
@@ -1082,8 +1438,7 @@ class GoogleNewsFeedService {
       // Remove all HTML tags for plain text processing
       formattedContent = formattedContent
         .replace(/<[^>]+>/g, ' ') // Remove HTML tags
-        .replace(/[ \t]+/g, ' ') // Normalize spaces and tabs only
-        .replace(/\n\s*\n\s*\n+/g, '\n\n') // Clean up excessive newlines
+        .replace(/\s+/g, ' ') // Normalize all whitespace
         .trim();
 
       // Split into sentences and create richer content structure
@@ -1168,33 +1523,35 @@ class GoogleNewsFeedService {
   }
 
   /**
-   * Generate URL-friendly slug from title with unique timestamp
+   * Generate clean, SEO-friendly slug from title
    */
   private generateSlug(title: string): string {
-    const now = new Date();
-    const timestamp = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
-    
     if (!title || title.trim().length === 0) {
-      return `article-${timestamp}`;
+      // Generate a fallback slug with current date for uniqueness
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+      return `article-${dateStr}`;
     }
 
     let slug = title
       .toLowerCase()
       .trim()
-      // Replace spaces and special characters with hyphens
+      // Remove special characters except spaces and hyphens
       .replace(/[^\w\s-]/g, '')
-      .replace(/[\s_-]+/g, '-')
+      // Replace multiple spaces/underscores with single hyphen
+      .replace(/[\s_]+/g, '-')
+      // Replace multiple hyphens with single hyphen
+      .replace(/-+/g, '-')
       // Remove leading/trailing hyphens
       .replace(/^-+|-+$/g, '')
-      // Ensure it's not too long (reasonable limit for URLs, leaving space for timestamp)
-      .substring(0, 80);
+      // Limit length for SEO (recommended max 60-70 characters)
+      .substring(0, 70);
 
-    // If slug is empty or too short, create a fallback
+    // If slug is empty or too short after processing, create a fallback
     if (!slug || slug.length < 3) {
-      slug = `article-${timestamp}`;
-    } else {
-      // Append unique timestamp to ensure uniqueness
-      slug = `${slug}-${timestamp}`;
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+      return `article-${dateStr}`;
     }
 
     return slug;
@@ -1204,84 +1561,204 @@ class GoogleNewsFeedService {
    * Transform Google News item to Strapi article format
    */
   private async transformToArticle(item: GoogleNewsItem, category: string = ''): Promise<ParsedNewsItem> {
-    // Clean title by removing publisher names
+    const transformStartTime = Date.now();
+    
+    // Clean title by removing publisher names and author names
     const originalTitle = item.title || '';
     const cleanedTitle = this.cleanTitle(originalTitle);
-    const title = cleanedTitle.substring(0, 200); // Content model limit: 200
+    const title = this.removeAuthorFromText(cleanedTitle).substring(0, 200); // Content model limit: 200
     
-    // Log for debugging
-    strapi.log.debug(`Title processing: "${originalTitle}" -> "${cleanedTitle}" -> "${title}"`);
+    this.strapi.log.info(`🔄 Transforming article: "${title}" from category: ${category}`);
+    this.strapi.log.debug(`   📝 Title processing: "${originalTitle}" -> "${cleanedTitle}" -> "${title}"`);
     
     // Generate slug manually since auto-generation isn't working
     const slug = this.generateSlug(title);
     
-    // Try to fetch full content from source URL first
+    // Try to fetch full content from source URL using AI-powered extraction
     let rawContent = item.content || item.contentSnippet || '';
-    let fullContent = '';
+    let extractionResult: ExtractionResult;
+    let aiExtractedData: any = null;
     
     try {
-      fullContent = await this.fetchFullContent(item.link);
-      strapi.log.debug(`Fetched full content length: ${fullContent.length} characters for: ${title}`);
+      this.strapi.log.debug(`   🔍 Starting AI-powered content extraction for: ${item.link}`);
+      extractionResult = await this.fetchContentWithAI(item.link, item);
+      
+      // If AI extraction was successful, get the structured data
+      if (extractionResult.extractionMethod === 'AI (Gemini)') {
+        try {
+          // Re-extract to get the full AI data structure
+          const response = await axios.get(item.link, {
+            timeout: 15000,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          });
+          const aiResult = await this.aiContentExtractor.extractContent(response.data, item.link);
+          if (aiResult.success) {
+            aiExtractedData = aiResult.data;
+          }
+        } catch (aiError) {
+          this.strapi.log.debug(`   ⚠️  Could not re-extract AI data: ${aiError.message}`);
+        }
+      }
+      
+      this.strapi.log.info(`   ✅ Enhanced extraction completed:`);
+      this.strapi.log.info(`      📊 Method: ${extractionResult.extractionMethod}`);
+      this.strapi.log.info(`      📝 Content: ${extractionResult.content.length} chars (${extractionResult.wordCount} words)`);
+      this.strapi.log.info(`      🖼️  Images: ${extractionResult.images.length} optimized images`);
+      this.strapi.log.info(`      🏆 Quality: ${extractionResult.contentQuality.toUpperCase()}`);
+      this.strapi.log.info(`      ⏱️  Processing time: ${extractionResult.processingTime}ms`);
+      
+      if (extractionResult.images.length > 0) {
+        const avgScore = extractionResult.images.reduce((sum, img) => sum + img.score, 0) / extractionResult.images.length;
+        this.strapi.log.info(`      📈 Average image score: ${avgScore.toFixed(1)}`);
+        this.strapi.log.debug(`      🖼️  Image details:`, extractionResult.images.map(img => ({
+          url: img.url.substring(0, 50) + '...',
+          score: img.score,
+          dimensions: `${img.width}x${img.height}`,
+          format: img.format
+        })));
+      }
+      
     } catch (error) {
-      strapi.log.warn(`Failed to fetch full content for ${title}: ${error.message}`);
+      this.strapi.log.warn(`   ❌ AI/Enhanced extraction failed for ${title}: ${error.message}`);
+      extractionResult = {
+        content: rawContent,
+        images: [],
+        extractionMethod: 'RSS fallback',
+        wordCount: rawContent.split(' ').length,
+        contentQuality: 'poor',
+        processingTime: 0
+      };
     }
 
-    // Use full content if available and substantial, otherwise fall back to RSS content
-    const contentToProcess = (fullContent && fullContent.length > rawContent.length * 2) ? fullContent : rawContent;
+    // Use AI-extracted content if available, otherwise use enhanced content or RSS fallback
+    const contentToProcess = (extractionResult.content && extractionResult.content.length > rawContent.length) 
+      ? extractionResult.content 
+      : rawContent;
     
     const formattedContent = this.formatContent(contentToProcess, true); // Preserve HTML
-    // Also clean content to remove publisher names
     const cleanedContent = this.removePublisherFromContent(formattedContent);
 
-    // Extract images from the full content
-    const contentImages = this.extractImagesFromContent(fullContent || rawContent);
-    strapi.log.debug(`Extracted ${contentImages.length} images from content for: ${title}`);
+    // Use AI-extracted title if available and better than RSS title
+    let finalTitle = title;
+    if (aiExtractedData && aiExtractedData.title && aiExtractedData.title.length > 10) {
+      finalTitle = aiExtractedData.title.substring(0, 200);
+      this.strapi.log.debug(`   🤖 Using AI-extracted title: "${finalTitle}"`);
+    }
 
-    // Use RSS content snippet as excerpt (clean and limit to 300 chars)
-    const rssSnippet = item.contentSnippet || item.content || '';
-    const cleanSnippet = rssSnippet.replace(/<[^>]+>/g, '').trim();
-    const excerpt = this.cleanHtmlEntities(cleanSnippet).substring(0, 300); // Content model limit: 300
-    const location = this.extractLocation(rawContent);
+    // Log content length for monitoring (no minimum limit enforced)
+    const contentText = cleanedContent.replace(/<[^>]+>/g, '').trim();
+    this.strapi.log.debug(`   📏 Article content length: ${contentText.length} characters`);
+    
+    // Warn if content is very short but don't skip the article
+    if (contentText.length < 100) {
+      this.strapi.log.warn(`   ⚠️  Article content is quite short (${contentText.length} chars): ${title}`);
+    }
+
+    // Use enhanced images if available, otherwise extract from content
+    let imageUrl = '';
+    let imageUrls: string[] = [];
+    
+    if (extractionResult.images.length > 0) {
+      // Use optimized images from enhanced extraction
+      imageUrl = extractionResult.images[0].url;
+      imageUrls = extractionResult.images.map(img => img.url);
+      this.strapi.log.debug(`   🎯 Using ${extractionResult.images.length} optimized images (primary: ${imageUrl.substring(0, 50)}...)`);
+    } else {
+      // Fallback to original image extraction method
+      const fallbackImages = this.extractImagesFromContent(contentToProcess);
+      if (fallbackImages.length > 0) {
+        imageUrl = fallbackImages[0];
+        imageUrls = fallbackImages;
+        this.strapi.log.debug(`   🔄 Using ${fallbackImages.length} fallback images`);
+      } else {
+        imageUrl = await this.extractImageUrl(rawContent, title);
+        if (imageUrl) imageUrls = [imageUrl];
+        this.strapi.log.debug(`   📷 Using legacy image extraction`);
+      }
+    }
+
+    // Extract excerpt - prioritize AI-extracted excerpt
+    let excerpt = '';
+    if (aiExtractedData && aiExtractedData.excerpt && aiExtractedData.excerpt.length > 20) {
+      excerpt = aiExtractedData.excerpt.substring(0, 300);
+      this.strapi.log.debug(`   🤖 Using AI-extracted excerpt: "${excerpt.substring(0, 50)}..."`);
+    } else {
+      // Fallback to RSS content snippet as excerpt (clean and limit to 300 chars)
+      const rssSnippet = item.contentSnippet || item.content || '';
+      const cleanSnippet = rssSnippet.replace(/<[^>]+>/g, '').trim();
+      const cleanedSnippet = this.removeAuthorFromText(cleanSnippet);
+      excerpt = this.cleanHtmlEntities(cleanedSnippet).substring(0, 300);
+    }
+    // Extract location - prioritize AI-extracted location
+    let location = '';
+    if (aiExtractedData && aiExtractedData.location && aiExtractedData.location.length > 2) {
+      location = aiExtractedData.location.substring(0, 100);
+      this.strapi.log.debug(`   🤖 Using AI-extracted location: "${location}"`);
+    } else {
+      location = this.extractLocationFromContent(cleanedContent);
+    }
     
     // Ensure sourceUrl is valid and within limits
     let sourceUrl = '';
     if (item.link && typeof item.link === 'string' && item.link.trim()) {
-      sourceUrl = item.link.trim().substring(0, 490); // Leave some buffer under 500 limit
+      sourceUrl = item.link.trim().substring(0, 490);
     } else {
-      strapi.log.warn(`Invalid or missing link for article: ${title}`);
+      this.strapi.log.warn(`   ⚠️  Invalid or missing link for article: ${title}`);
       sourceUrl = `https://news.google.com/search?q=${encodeURIComponent(title.substring(0, 50))}`;
     }
 
-    // Extract image URL - prioritize images from content, then fallback to original method
-    let imageUrl = '';
-    if (contentImages.length > 0) {
-      // Use the first high-quality image from content
-      imageUrl = contentImages[0];
-      strapi.log.debug(`Using content image: ${imageUrl} for article: ${title}`);
+    // Extract tags - prioritize AI-extracted tags
+    let extractedTags: string[] = [];
+    if (aiExtractedData && aiExtractedData.tags && Array.isArray(aiExtractedData.tags) && aiExtractedData.tags.length > 0) {
+      extractedTags = aiExtractedData.tags.slice(0, 10); // Limit to 10 tags
+      this.strapi.log.debug(`   🤖 Using ${extractedTags.length} AI-extracted tags: ${extractedTags.join(', ')}`);
     } else {
-      // Fallback to original image extraction method
-      imageUrl = await this.extractImageUrl(rawContent, title);
+      extractedTags = this.extractTags(finalTitle, cleanedContent, category);
+    }
+    this.strapi.log.debug(`   🏷️  Extracted ${extractedTags.length} tags: ${extractedTags.join(', ')}`);
+
+    const transformTime = Date.now() - transformStartTime;
+    this.strapi.log.info(`   ✅ Article transformation completed in ${transformTime}ms`);
+
+    // Generate SEO fields - prioritize AI-extracted data
+    let seoTitle = finalTitle.substring(0, 60);
+    let seoDescription = excerpt.substring(0, 160);
+    
+    if (aiExtractedData) {
+      // Use AI-extracted SEO fields if available and valid
+      if (aiExtractedData.seoTitle && aiExtractedData.seoTitle.trim().length > 0) {
+        seoTitle = aiExtractedData.seoTitle.substring(0, 60);
+        this.strapi.log.debug(`   🤖 Using AI-extracted SEO title: "${seoTitle}"`);
+      }
+      if (aiExtractedData.seoDescription && aiExtractedData.seoDescription.trim().length > 0) {
+        seoDescription = aiExtractedData.seoDescription.substring(0, 160);
+        this.strapi.log.debug(`   🤖 Using AI-extracted SEO description: "${seoDescription}"`);
+      }
     }
 
-    // Extract tags from title and content
-    const extractedTags = this.extractTags(title, cleanedContent, category);
-    strapi.log.debug(`Extracted ${extractedTags.length} tags for article: ${title}`, extractedTags);
-
-    return {
-      title,
-      slug, // Manual slug generation
+    const result: ParsedNewsItem = {
+      title: finalTitle,
+      slug: this.generateSlug(finalTitle), // Regenerate slug with final title
       excerpt,
-      content: cleanedContent, // No length limit in content model (richtext)
+      content: cleanedContent,
       publishedDate: new Date(item.pubDate).toISOString(),
       sourceUrl,
-      location: location.substring(0, 100), // Content model limit: 100
+      location: location.substring(0, 100),
       readTime: this.calculateReadTime(cleanedContent),
-      seoTitle: title.substring(0, 60), // Content model limit: 60
-      seoDescription: excerpt.substring(0, 160), // Content model limit: 160
-      isBreaking: this.isBreakingNews(title, rawContent, category),
+      seoTitle,
+      seoDescription,
+      isBreaking: this.isBreakingNews(finalTitle, rawContent, category),
       imageUrl,
-      tags: extractedTags
+      tags: extractedTags,
+      images: extractionResult.images,
+      extractionResult
     };
+
+    this.strapi.log.info(`🎉 Article ready for creation: "${finalTitle}" (${result.readTime} min read, ${imageUrls.length} images)`);
+    
+    return result;
   }
 
   /**
@@ -1289,10 +1766,14 @@ class GoogleNewsFeedService {
    */
   async articleExists(sourceUrl: string): Promise<boolean> {
     try {
-      const existingArticles = await strapi.entityService.findMany('api::article.article', {
+      // Only check for published articles, ignore drafts
+      const existingArticles = await this.strapi.entityService.findMany('api::article.article', {
         filters: {
           sourceUrl: {
             $eq: sourceUrl
+          },
+          publishedAt: {
+            $notNull: true
           }
         } as any,
         limit: 1
@@ -1300,7 +1781,7 @@ class GoogleNewsFeedService {
 
       return existingArticles && existingArticles.length > 0;
     } catch (error) {
-      strapi.log.error('Error checking if article exists:', error);
+      this.strapi.log.error('Error checking if article exists:', error);
       return false;
     }
   }
@@ -1311,14 +1792,14 @@ class GoogleNewsFeedService {
   async getAuthorAndCategory(categoryName: string = 'News') {
     try {
       // Get or create default author
-      let authors = await strapi.entityService.findMany('api::author.author', {
+      let authors = await this.strapi.entityService.findMany('api::author.author', {
         filters: { name: 'Google News Bot' },
         limit: 1
       }) as any[];
 
       let author: any;
       if (!authors || authors.length === 0) {
-        author = await strapi.entityService.create('api::author.author', {
+        author = await this.strapi.entityService.create('api::author.author', {
           data: {
             name: 'Google News Bot',
             slug: 'google-news-bot',
@@ -1330,7 +1811,7 @@ class GoogleNewsFeedService {
       }
 
       // Get or create specific category
-      let categories = await strapi.entityService.findMany('api::category.category', {
+      let categories = await this.strapi.entityService.findMany('api::category.category', {
         filters: { name: categoryName },
         limit: 1
       }) as any[];
@@ -1339,132 +1820,133 @@ class GoogleNewsFeedService {
       if (!categories || categories.length === 0) {
         // Create category with proper slug
         const slug = categoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-        category = await strapi.entityService.create('api::category.category', {
+        category = await this.strapi.entityService.create('api::category.category', {
           data: {
             name: categoryName,
             slug: slug,
             description: `${categoryName} news articles`
           }
         });
-        strapi.log.info(`Created new category: ${categoryName}`);
+        this.strapi.log.info(`Created new category: ${categoryName}`);
       } else {
         category = categories[0];
       }
 
       return { author, category };
     } catch (error) {
-      strapi.log.error('Error getting author and category:', error);
+      this.strapi.log.error('Error getting author and category:', error);
       throw error;
     }
   }
 
   /**
-   * Upload image from URL to Strapi media library with fallback options
+   * Upload image from URL to Strapi media library
    */
   private async uploadImageFromUrl(imageUrl: string, title: string): Promise<any> {
-    const searchTerm = this.extractKeywordsForImage(title);
-    
-    // Define fallback image URLs
-    const imageUrls = [
-      imageUrl, // Original URL (likely Unsplash)
-      `https://picsum.photos/800/600?random=${Date.now()}`, // Lorem Picsum
-      `https://via.placeholder.com/800x600/0066cc/ffffff?text=${encodeURIComponent(searchTerm.substring(0, 20))}` // Placeholder.com
-    ];
-
-    for (let i = 0; i < imageUrls.length; i++) {
-      const currentUrl = imageUrls[i];
-      try {
-        strapi.log.debug(`Attempting to upload image from URL (attempt ${i + 1}): ${currentUrl}`);
-        
-        // Download the image with better error handling
-        const response = await axios.get(currentUrl, {
-          responseType: 'arraybuffer',
-          timeout: 15000, // Increased timeout
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'image/*,*/*;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Cache-Control': 'no-cache'
-          },
-          maxRedirects: 5,
-          validateStatus: (status) => status >= 200 && status < 400
-        });
-
-        if (response.status !== 200) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        // Validate response data
-        if (!response.data || response.data.byteLength === 0) {
-          throw new Error('Empty response data');
-        }
-
-        // Create a buffer from the response
-        const buffer = Buffer.from(response.data);
-        
-        // Validate buffer size (minimum 1KB, maximum 10MB)
-        if (buffer.length < 1024) {
-          throw new Error('Image too small (less than 1KB)');
-        }
-        if (buffer.length > 10 * 1024 * 1024) {
-          throw new Error('Image too large (more than 10MB)');
-        }
-        
-        // Extract filename from URL or create one
-        const urlParts = currentUrl.split('/');
-        const filename = urlParts[urlParts.length - 1] || `article-${Date.now()}.jpg`;
-        const cleanFilename = filename.split('?')[0] || `article-${Date.now()}.jpg`;
-        
-        // Ensure proper extension based on content type
-        const contentType = response.headers['content-type'] || 'image/jpeg';
-        let extension = '.jpg';
-        if (contentType.includes('png')) extension = '.png';
-        else if (contentType.includes('gif')) extension = '.gif';
-        else if (contentType.includes('webp')) extension = '.webp';
-        
-        const finalFilename = cleanFilename.includes('.') ? cleanFilename : `${cleanFilename}${extension}`;
-        
-        // Create file object in the correct format for Strapi v4
-        const fileData = {
-          name: finalFilename,
-          type: contentType,
-          size: buffer.length,
-          buffer: buffer,
-          path: finalFilename
-        };
-
-        // Upload to Strapi using the correct v4 upload service API
-        const uploadResponse = await strapi.plugins.upload.services.upload.upload({
-          data: {
-            fileInfo: {
-              name: finalFilename,
-              alternativeText: title.substring(0, 100),
-              caption: title.substring(0, 200)
-            }
-          },
-          files: [fileData]  // Must be an array in Strapi v4
-        });
-
-        if (uploadResponse && (Array.isArray(uploadResponse) ? uploadResponse.length > 0 : uploadResponse.id)) {
-          const uploadedFile = Array.isArray(uploadResponse) ? uploadResponse[0] : uploadResponse;
-          strapi.log.info(`Successfully uploaded image: ${finalFilename} (${buffer.length} bytes) from ${currentUrl}`);
-          return uploadedFile;
-        } else {
-          throw new Error('Upload service returned empty response');
-        }
-      } catch (error) {
-        const errorMessage = error.response ? 
-          `HTTP ${error.response.status}: ${error.response.statusText}` : 
-          error.message;
-        strapi.log.warn(`Failed to upload image from URL: ${currentUrl} - ${errorMessage}`);
-        
-        if (i === imageUrls.length - 1) {
-          strapi.log.error(`All image upload attempts failed for article: ${title}`);
-        }
-      }
+    if (!imageUrl || !imageUrl.startsWith('http')) {
+      this.strapi.log.debug(`Invalid image URL provided: ${imageUrl}`);
+      return null;
     }
 
-    return null;
+    try {
+      this.strapi.log.debug(`Attempting to upload image from URL: ${imageUrl.substring(0, 100)}...`);
+      
+      // Download the image with proper headers
+      const response = await axios.get(imageUrl, {
+        responseType: 'arraybuffer',
+        timeout: 20000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+          'Sec-Fetch-Dest': 'image',
+          'Sec-Fetch-Mode': 'no-cors',
+          'Sec-Fetch-Site': 'cross-site'
+        },
+        maxRedirects: 5,
+        validateStatus: (status) => status >= 200 && status < 400
+      });
+
+      if (response.status !== 200 || !response.data) {
+        throw new Error(`Invalid response: ${response.status} ${response.statusText}`);
+      }
+
+      // Create buffer and validate
+      const buffer = Buffer.from(response.data);
+      
+      if (buffer.length < 1024) {
+        throw new Error('Image too small (less than 1KB)');
+      }
+      if (buffer.length > 15 * 1024 * 1024) {
+        throw new Error('Image too large (more than 15MB)');
+      }
+      
+      // Determine content type and extension
+      const contentType = response.headers['content-type'] || 'image/jpeg';
+      let extension = '.jpg';
+      
+      if (contentType.includes('png')) extension = '.png';
+      else if (contentType.includes('gif')) extension = '.gif';
+      else if (contentType.includes('webp')) extension = '.webp';
+      else if (contentType.includes('svg')) extension = '.svg';
+      
+      // Generate filename
+      const timestamp = Date.now();
+      const randomId = Math.random().toString(36).substring(2, 8);
+      const cleanTitle = title.replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
+      const filename = `article_${cleanTitle}_${timestamp}_${randomId}${extension}`;
+      
+      // Create form data for Strapi v4 upload
+      const FormData = require('form-data');
+      const form = new FormData();
+      
+      // Add the file buffer as a stream
+      form.append('files', buffer, {
+        filename: filename,
+        contentType: contentType,
+        knownLength: buffer.length
+      });
+      
+      // Add file info
+      form.append('fileInfo', JSON.stringify({
+        name: filename,
+        alternativeText: title.substring(0, 100),
+        caption: `Image for article: ${title.substring(0, 150)}`,
+        folder: null
+      }));
+
+      // Upload using Strapi's upload service
+      const uploadResponse = await this.strapi.plugins.upload.services.upload.upload({
+        data: {},
+        files: {
+          files: {
+            name: filename,
+            type: contentType,
+            size: buffer.length,
+            path: filename,
+            buffer: buffer
+          }
+        }
+      });
+
+      if (uploadResponse && uploadResponse.length > 0) {
+        const uploadedFile = uploadResponse[0];
+        this.strapi.log.info(`✅ Successfully uploaded image: ${filename} (${(buffer.length / 1024).toFixed(1)}KB)`);
+        return uploadedFile;
+      } else {
+        throw new Error('Upload service returned empty response');
+      }
+      
+    } catch (error) {
+      const errorMessage = error.response ? 
+        `HTTP ${error.response.status}: ${error.response.statusText}` : 
+        error.message;
+      this.strapi.log.warn(`❌ Failed to upload image from URL: ${imageUrl.substring(0, 100)}... - ${errorMessage}`);
+      return null;
+    }
   }
 
   /**
@@ -1481,10 +1963,10 @@ class GoogleNewsFeedService {
         try {
           featuredImage = await this.uploadImageFromUrl(articleData.imageUrl, articleData.title);
           if (!featuredImage) {
-            strapi.log.warn(`Image upload failed for article: ${articleData.title}, proceeding without image`);
+            this.strapi.log.warn(`Image upload failed for article: ${articleData.title}, proceeding without image`);
           }
         } catch (error) {
-          strapi.log.warn(`Image upload error for article: ${articleData.title}, proceeding without image: ${error.message}`);
+          this.strapi.log.warn(`Image upload error for article: ${articleData.title}, proceeding without image: ${error.message}`);
           featuredImage = null;
         }
       }
@@ -1508,7 +1990,7 @@ class GoogleNewsFeedService {
         imageAlt: articleData.title.substring(0, 200) // Content model limit: 200
       };
 
-      const article = await strapi.entityService.create('api::article.article', {
+      const article = await this.strapi.entityService.create('api::article.article', {
         data: articleWithSource,
         populate: ['author', 'category', 'featuredImage']
       });
@@ -1519,23 +2001,23 @@ class GoogleNewsFeedService {
         if (tagIds.length > 0) {
           try {
             // Use the relation service to connect tags
-            await strapi.db.query('api::article.article').update({
+            await this.strapi.db.query('api::article.article').update({
               where: { id: article.id },
               data: {
                 tags: tagIds
               }
             });
-            strapi.log.debug(`Associated ${tagIds.length} tags with article: ${articleData.title}`);
+            this.strapi.log.debug(`Associated ${tagIds.length} tags with article: ${articleData.title}`);
           } catch (tagError) {
-            strapi.log.warn(`Failed to associate tags with article: ${tagError.message}`);
+            this.strapi.log.warn(`Failed to associate tags with article: ${tagError.message}`);
           }
         }
       }
 
-      strapi.log.info(`Article created successfully: ${article.title}${featuredImage ? ' with image' : ''}`);
+      this.strapi.log.info(`Article created successfully: ${article.title}${featuredImage ? ' with image' : ''}`);
       return article;
     } catch (error) {
-      strapi.log.error(`Error creating article: ${error.message}`);
+      this.strapi.log.error(`Error creating article: ${error.message}`);
       throw error;
     }
   }
@@ -1552,20 +2034,20 @@ class GoogleNewsFeedService {
     let skipped = 0;
     let errors = 0;
 
-    strapi.log.info(`Starting Google News import for categories: ${categories.join(', ')}`);
+    this.strapi.log.info(`Starting Google News import for categories: ${categories.join(', ')}`);
 
     for (const category of categories) {
       try {
         const newsItems = await this.fetchFeed(category);
         const limitedItems = newsItems.slice(0, maxArticlesPerCategory);
 
-        strapi.log.info(`Found ${newsItems.length} items, processing ${limitedItems.length} for category: ${category}`);
+        this.strapi.log.info(`Found ${newsItems.length} items, processing ${limitedItems.length} for category: ${category}`);
 
         for (const item of limitedItems) {
           try {
             // Validate required fields
             if (!item.title || !item.link) {
-              strapi.log.warn(`Skipping item with missing title or link: ${JSON.stringify(item)}`);
+              this.strapi.log.warn(`Skipping item with missing title or link: ${JSON.stringify(item)}`);
               skipped++;
               continue;
             }
@@ -1573,7 +2055,7 @@ class GoogleNewsFeedService {
             // Check if article already exists
             const exists = await this.articleExists(item.link);
             if (exists) {
-              strapi.log.debug(`Article already exists, skipping: ${item.title}`);
+              this.strapi.log.debug(`Article already exists, skipping: ${item.title}`);
               skipped++;
               continue;
             }
@@ -1583,14 +2065,14 @@ class GoogleNewsFeedService {
             try {
               articleData = await this.transformToArticle(item, category);
             } catch (transformError) {
-              strapi.log.error(`Error transforming article: ${item.title}`, transformError);
+              this.strapi.log.error(`Error transforming article: ${item.title}`, transformError);
               errors++;
               continue;
             }
 
             // Validate transformed data
             if (!articleData.title || articleData.title.trim().length === 0) {
-              strapi.log.warn(`Skipping article with empty title after transformation: ${item.title}`);
+              this.strapi.log.warn(`Skipping article with empty title after transformation: ${item.title}`);
               skipped++;
               continue;
             }
@@ -1609,15 +2091,15 @@ class GoogleNewsFeedService {
             while (createAttempts < maxAttempts && !articleCreated) {
               try {
                 await this.createArticle(articleWithSource, category);
-                strapi.log.info(`Successfully created article: ${articleData.title} in category: ${category}`);
+                this.strapi.log.info(`Successfully created article: ${articleData.title} in category: ${category}`);
                 imported++;
                 articleCreated = true;
               } catch (createError) {
                 createAttempts++;
-                strapi.log.warn(`Attempt ${createAttempts} failed for article: ${articleData.title}`, createError);
+                this.strapi.log.warn(`Attempt ${createAttempts} failed for article: ${articleData.title}`, createError);
                 
                 if (createAttempts >= maxAttempts) {
-                  strapi.log.error(`Failed to create article after ${maxAttempts} attempts: ${articleData.title}`, createError);
+                  this.strapi.log.error(`Failed to create article after ${maxAttempts} attempts: ${articleData.title}`, createError);
                   errors++;
                 } else {
                   // Wait before retry
@@ -1630,7 +2112,7 @@ class GoogleNewsFeedService {
             await new Promise(resolve => setTimeout(resolve, 100));
 
           } catch (error) {
-            strapi.log.error(`Unexpected error processing article: ${item.title || 'Unknown title'}`, error);
+            this.strapi.log.error(`Unexpected error processing article: ${item.title || 'Unknown title'}`, error);
             errors++;
             
             // Continue processing other articles even if one fails
@@ -1638,10 +2120,10 @@ class GoogleNewsFeedService {
           }
         }
 
-        strapi.log.info(`Completed processing category: ${category}. Imported: ${imported}, Skipped: ${skipped}, Errors: ${errors}`);
+        this.strapi.log.info(`Completed processing category: ${category}. Imported: ${imported}, Skipped: ${skipped}, Errors: ${errors}`);
 
       } catch (categoryError) {
-        strapi.log.error(`Error processing category ${category}:`, categoryError);
+        this.strapi.log.error(`Error processing category ${category}:`, categoryError);
         errors++;
         
         // Continue with next category even if current one fails
@@ -1650,8 +2132,69 @@ class GoogleNewsFeedService {
     }
 
     const result = { imported, skipped, errors };
-    strapi.log.info('Google News import completed:', result);
+    this.strapi.log.info('Google News import completed:', result);
     return result;
+  }
+
+  /**
+   * Test AI extraction with provided content (for testing purposes)
+   */
+  async testAIExtraction(mockArticle: any): Promise<any> {
+    try {
+      this.strapi.log.info(`🧪 Testing AI extraction for: ${mockArticle.title}`);
+      
+      const startTime = Date.now();
+      
+      // Use the existing AI extraction method
+      const extractionResult = await this.fetchContentWithAI(mockArticle.link, mockArticle);
+      
+      const processingTime = Date.now() - startTime;
+      
+      this.strapi.log.info(`✅ AI extraction test completed in ${processingTime}ms`);
+      
+      return {
+        title: mockArticle.title,
+        content: extractionResult.content || 'No content extracted',
+        tags: [], // Tags are not part of ExtractionResult
+        images: extractionResult.images || [],
+        quality: extractionResult.contentQuality || 'UNKNOWN',
+        method: extractionResult.extractionMethod || 'AI',
+        wordCount: extractionResult.wordCount || 0,
+        processingTime: processingTime,
+        success: true,
+        originalUrl: mockArticle.link,
+        extractedAt: new Date().toISOString()
+      };
+      
+    } catch (error) {
+      this.strapi.log.error('AI extraction test failed:', error);
+      
+      return {
+        title: mockArticle.title,
+        content: 'AI extraction failed',
+        tags: [],
+        images: [],
+        quality: 'FAILED',
+        method: 'ERROR',
+        processingTime: 0,
+        success: false,
+        error: error.message,
+        originalUrl: mockArticle.link,
+        extractedAt: new Date().toISOString()
+      };
+    }
+  }
+
+  /**
+   * Cleanup resources when service is destroyed
+   */
+  async cleanup(): Promise<void> {
+    try {
+      await this.articleExtractor.cleanup();
+      this.strapi.log.info('Google News Feed Service cleanup completed');
+    } catch (error) {
+      this.strapi.log.error('Error during Google News Feed Service cleanup:', error);
+    }
   }
 }
 
