@@ -116,6 +116,135 @@ class GoogleNewsFeedService {
   }
 
   /**
+   * Enhanced RSS processing with comprehensive logging and improved synchronization
+   */
+  async processRSSItemsWithEnhancedAI(category: string = 'World', maxArticles: number = 5): Promise<any[]> {
+    const startTime = Date.now();
+    
+    try {
+      this.strapi.log.info(`🚀 [ENHANCED-PIPELINE] Starting enhanced AI processing for category: ${category}, maxArticles: ${maxArticles}`);
+      this.strapi.log.info(`🔧 [ENHANCED-PIPELINE] Pipeline configuration: URL resolution enabled, AI extraction enabled, Draft saving enabled`);
+
+      // Step 1: Fetch RSS feed with enhanced logging
+      this.strapi.log.info(`📡 [ENHANCED-PIPELINE] Step 1: Fetching RSS feed for category: ${category}`);
+      const rssItems = await this.fetchFeed(category);
+      this.strapi.log.info(`📊 [ENHANCED-PIPELINE] RSS feed fetched successfully: ${rssItems.length} items found`);
+
+      // Step 2: Limit and validate items
+      const limitedItems = rssItems.slice(0, maxArticles);
+      this.strapi.log.info(`🎯 [ENHANCED-PIPELINE] Step 2: Limited to ${limitedItems.length} items for processing`);
+
+      const results = [];
+      let successCount = 0;
+      let failureCount = 0;
+
+      // Step 3: Process each item with enhanced logging and error handling
+      for (let i = 0; i < limitedItems.length; i++) {
+        const rssItem = limitedItems[i];
+        const itemStartTime = Date.now();
+        
+        try {
+          this.strapi.log.info(`🔄 [ENHANCED-PIPELINE] Processing item ${i + 1}/${limitedItems.length}: "${rssItem.title}"`);
+          this.strapi.log.info(`🔗 [ENHANCED-PIPELINE] Original URL: ${rssItem.link}`);
+
+          // Step 3a: Pre-validate RSS item
+          if (!rssItem.link || !rssItem.title) {
+            throw new Error('Invalid RSS item: missing required link or title');
+          }
+
+          // Step 3b: Enhanced URL resolution with detailed logging
+          this.strapi.log.info(`🔍 [ENHANCED-PIPELINE] Step 3b: Resolving URL for better content extraction`);
+          const resolvedUrl = await this.resolveUrlWithRetry(rssItem.link);
+          this.strapi.log.info(`✅ [ENHANCED-PIPELINE] URL resolved successfully: ${resolvedUrl}`);
+
+          // Update RSS item with resolved URL for AI processing
+          const enhancedRssItem = {
+            ...rssItem,
+            link: resolvedUrl,
+            originalLink: rssItem.link
+          };
+
+          // Step 3c: AI content extraction with enhanced logging
+          this.strapi.log.info(`🤖 [ENHANCED-PIPELINE] Step 3c: Starting AI content extraction`);
+          const result = await this.aiContentExtractor.processRSSItemToArticle(enhancedRssItem, category);
+
+          if (result.success) {
+            const processingTime = Date.now() - itemStartTime;
+            successCount++;
+            
+            results.push({
+              success: true,
+              article: result.article,
+              title: result.extractedContent.title,
+              slug: result.extractedContent.slug,
+              processingTime: processingTime,
+              aiProcessingTime: result.processingTime,
+              originalUrl: rssItem.link,
+              resolvedUrl: resolvedUrl,
+              category: category
+            });
+            
+            this.strapi.log.info(`✅ [ENHANCED-PIPELINE] Item ${i + 1} processed successfully in ${processingTime}ms`);
+            this.strapi.log.info(`📝 [ENHANCED-PIPELINE] Article created: "${result.extractedContent.title}" (ID: ${result.article.id})`);
+            this.strapi.log.info(`🏷️ [ENHANCED-PIPELINE] Generated slug: ${result.extractedContent.slug}`);
+            this.strapi.log.info(`📍 [ENHANCED-PIPELINE] Location: ${result.extractedContent.location || 'Not specified'}`);
+            this.strapi.log.info(`🏷️ [ENHANCED-PIPELINE] Tags: ${result.extractedContent.tags.join(', ')}`);
+          } else {
+            failureCount++;
+            results.push({
+              success: false,
+              error: result.error,
+              originalTitle: rssItem.title,
+              originalUrl: rssItem.link,
+              resolvedUrl: resolvedUrl,
+              processingTime: Date.now() - itemStartTime
+            });
+            this.strapi.log.error(`❌ [ENHANCED-PIPELINE] Item ${i + 1} failed: ${rssItem.title} - ${result.error}`);
+          }
+
+          // Step 3d: Rate limiting to avoid overwhelming services
+          if (i < limitedItems.length - 1) {
+            this.strapi.log.info(`⏱️ [ENHANCED-PIPELINE] Applying rate limit: 2 second delay before next item`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+
+        } catch (error) {
+          failureCount++;
+          const processingTime = Date.now() - itemStartTime;
+          
+          this.strapi.log.error(`💥 [ENHANCED-PIPELINE] Critical error processing item ${i + 1}: ${rssItem.title}`, error);
+          this.strapi.log.error(`🔍 [ENHANCED-PIPELINE] Error details: ${error.message}`);
+          this.strapi.log.error(`⏱️ [ENHANCED-PIPELINE] Failed after ${processingTime}ms`);
+          
+          results.push({
+            success: false,
+            error: error.message,
+            originalTitle: rssItem.title,
+            originalUrl: rssItem.link,
+            processingTime: processingTime
+          });
+        }
+      }
+
+      // Step 4: Final pipeline summary
+      const totalTime = Date.now() - startTime;
+      this.strapi.log.info(`🎉 [ENHANCED-PIPELINE] Processing complete!`);
+      this.strapi.log.info(`📊 [ENHANCED-PIPELINE] Summary: ${successCount} successful, ${failureCount} failed out of ${limitedItems.length} total`);
+      this.strapi.log.info(`⏱️ [ENHANCED-PIPELINE] Total processing time: ${totalTime}ms (avg: ${Math.round(totalTime / limitedItems.length)}ms per item)`);
+      this.strapi.log.info(`📈 [ENHANCED-PIPELINE] Success rate: ${Math.round((successCount / limitedItems.length) * 100)}%`);
+
+      // Update processing statistics
+      this.updateBatchProcessingStats(successCount, failureCount, totalTime);
+
+      return results;
+    } catch (error) {
+      const totalTime = Date.now() - startTime;
+      this.strapi.log.error(`💥 [ENHANCED-PIPELINE] Pipeline failed catastrophically after ${totalTime}ms:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Get Google News RSS feed URLs for different topics
    */
   private getFeedUrls() {
@@ -1593,7 +1722,7 @@ class GoogleNewsFeedService {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
           });
-          const aiResult = await this.aiContentExtractor.extractContent(response.data, item.link);
+          const aiResult = await this.aiContentExtractor.extractWithFallback(response.data, item.link);
           if (aiResult.success) {
             aiExtractedData = aiResult.data;
           }
@@ -1985,7 +2114,7 @@ class GoogleNewsFeedService {
         sourceUrl: articleData.sourceUrl,
         author: author.id,
         category: category.id,
-        publishedAt: new Date(),
+        publishedAt: null, // Save as draft (unpublished)
         featuredImage: featuredImage?.id || null,
         imageAlt: articleData.title.substring(0, 200) // Content model limit: 200
       };
@@ -2183,6 +2312,86 @@ class GoogleNewsFeedService {
         extractedAt: new Date().toISOString()
       };
     }
+  }
+
+  /**
+   * Enhanced URL resolution with retry logic and comprehensive logging
+   */
+  private async resolveUrlWithRetry(originalUrl: string, maxRetries: number = 3): Promise<string> {
+    this.strapi.log.info(`🔗 [URL-RESOLVER] Starting URL resolution for: ${originalUrl}`);
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        this.strapi.log.info(`🔄 [URL-RESOLVER] Attempt ${attempt}/${maxRetries}`);
+        
+        // Handle Google News URLs that need special resolution
+        if (originalUrl.includes('news.google.com')) {
+          this.strapi.log.info(`📰 [URL-RESOLVER] Detected Google News URL, applying special resolution`);
+          
+          const response = await axios.get(originalUrl, {
+            maxRedirects: 5,
+            timeout: 15000,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.5',
+              'Accept-Encoding': 'gzip, deflate',
+              'Connection': 'keep-alive',
+              'Upgrade-Insecure-Requests': '1'
+            }
+          });
+          
+          const resolvedUrl = response.request.res.responseUrl || originalUrl;
+          this.strapi.log.info(`✅ [URL-RESOLVER] Google News URL resolved: ${resolvedUrl}`);
+          return resolvedUrl;
+        }
+
+        // For other URLs, follow redirects to get final URL
+        this.strapi.log.info(`🌐 [URL-RESOLVER] Resolving standard URL with redirect following`);
+        const response = await axios.head(originalUrl, {
+          maxRedirects: 5,
+          timeout: 10000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        });
+        
+        const resolvedUrl = response.request.res.responseUrl || originalUrl;
+        this.strapi.log.info(`✅ [URL-RESOLVER] URL resolved successfully: ${resolvedUrl}`);
+        return resolvedUrl;
+        
+      } catch (error) {
+        this.strapi.log.warn(`⚠️ [URL-RESOLVER] Attempt ${attempt} failed: ${error.message}`);
+        
+        if (attempt === maxRetries) {
+          this.strapi.log.error(`❌ [URL-RESOLVER] All ${maxRetries} attempts failed, returning original URL`);
+          return originalUrl;
+        }
+        
+        // Wait before retry
+        const delay = attempt * 1000; // Exponential backoff
+        this.strapi.log.info(`⏱️ [URL-RESOLVER] Waiting ${delay}ms before retry`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    return originalUrl;
+  }
+
+  /**
+   * Update batch processing statistics for monitoring
+   */
+  private updateBatchProcessingStats(successCount: number, failureCount: number, totalTime: number): void {
+    this.processingStats.totalProcessed += successCount + failureCount;
+    this.processingStats.successfulExtractions += successCount;
+    this.processingStats.failedExtractions += failureCount;
+    this.processingStats.totalProcessingTime += totalTime;
+    this.processingStats.averageProcessingTime = this.processingStats.totalProcessingTime / this.processingStats.totalProcessed;
+    
+    this.strapi.log.info(`📊 [STATS] Updated processing statistics:`);
+    this.strapi.log.info(`📊 [STATS] Total processed: ${this.processingStats.totalProcessed}`);
+    this.strapi.log.info(`📊 [STATS] Success rate: ${Math.round((this.processingStats.successfulExtractions / this.processingStats.totalProcessed) * 100)}%`);
+    this.strapi.log.info(`📊 [STATS] Average processing time: ${Math.round(this.processingStats.averageProcessingTime)}ms`);
   }
 
   /**

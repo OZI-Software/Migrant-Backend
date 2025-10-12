@@ -13,8 +13,8 @@ module.exports = ({ strapi }) => ({
        throw new Error('Google Gemini API key is required for ai-text-generation plugin');
      }
 
-    this.genAI = new GoogleGenerativeAI(process.env.OPEN_AI_API_TOKEN);
-     this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+     this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     strapi.log.info('AI Text Generation service initialized');
   },
@@ -50,7 +50,7 @@ module.exports = ({ strapi }) => ({
       return {
         text: generatedText,
         usage: response.usageMetadata || {},
-        model: params.model || 'gemini-1.5-flash',
+        model: params.model || 'gemini-pro',
         processedPrompt,
         originalPrompt: params.prompt
       };
