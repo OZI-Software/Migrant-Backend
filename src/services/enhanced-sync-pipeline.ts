@@ -84,8 +84,16 @@ export class EnhancedSyncPipeline {
     const geminiApiKey = process.env.GEMINI_API_KEY;
     if (geminiApiKey) {
       this.geminiAI = new GoogleGenerativeAI(geminiApiKey);
-      this.model = this.geminiAI.getGenerativeModel({ model: 'gemini-pro' });
-      this.strapi.log.info('✅ Gemini AI initialized successfully');
+      this.model = this.geminiAI.getGenerativeModel({ 
+        model: 'gemini-pro',
+        generationConfig: {
+          temperature: 0.1,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 4096,
+        }
+      });
+      this.strapi.log.info('✅ Gemini AI initialized successfully with gemini-pro');
     } else {
       this.strapi.log.warn('⚠️ GEMINI_API_KEY not found - AI processing will be skipped');
     }
@@ -228,35 +236,37 @@ export class EnhancedSyncPipeline {
     try {
       this.strapi.log.debug(`🤖 Processing with Gemini AI...`);
 
-      const prompt = `
-You are a professional news editor. Transform the following article content into a well-structured news article for a CMS.
+      const prompt = `You are a professional news editor. Transform the following article into a structured CMS format.
 
-ARTICLE CONTENT:
-Title: ${extractedContent.title}
-Content: ${extractedContent.content}
-Source URL: ${extractedContent.resolvedUrl}
-Category: ${category}
+**ARTICLE DATA:**
+- Title: ${extractedContent.title}
+- Category: ${category}
+- Word Count: ${extractedContent.wordCount}
+- Source: ${extractedContent.resolvedUrl}
 
-REQUIREMENTS:
-1. Create an SEO-optimized title (max 60 characters)
-2. Generate a compelling excerpt (max 160 characters)
-3. Clean and format the content with proper paragraphs
-4. Create an SEO title and meta description
-5. Extract 5-8 relevant tags
-6. Determine the location/region if mentioned
-7. Calculate reading time based on word count
+**CONTENT:**
+${extractedContent.content.substring(0, 6000)}
 
-RESPOND WITH VALID JSON ONLY:
+**REQUIREMENTS:**
+1. Create compelling title (15-70 characters)
+2. Write engaging excerpt (120-200 characters)
+3. Format content with proper HTML paragraphs
+4. Generate SEO title and description
+5. Extract 4-6 specific, relevant tags
+6. Identify location if mentioned (city/country format)
+7. Create SEO-friendly slug
+
+**OUTPUT (JSON ONLY):**
 {
-  "title": "SEO-optimized title",
-  "slug": "url-friendly-slug",
-  "excerpt": "Compelling excerpt under 160 chars",
-  "content": "Well-formatted article content with proper paragraphs",
-  "seoTitle": "SEO title under 60 chars",
+  "title": "Engaging news headline",
+  "slug": "seo-friendly-slug",
+  "excerpt": "Compelling summary 120-200 chars",
+  "content": "<p>Well-structured HTML content</p>",
+  "seoTitle": "SEO title under 65 chars",
   "seoDescription": "Meta description under 160 chars",
-  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
-  "location": "Location/Region if mentioned, otherwise 'Global'",
-  "readingTime": 5
+  "tags": ["specific-tag1", "specific-tag2", "specific-tag3", "specific-tag4"],
+  "location": "City, Country or Global",
+  "readingTime": ${Math.ceil(extractedContent.wordCount / 200)}
 }`;
 
       const result = await this.model.generateContent(prompt);
@@ -283,7 +293,7 @@ RESPOND WITH VALID JSON ONLY:
         location: aiResult.location || 'Global',
         author: extractedContent.author,
         publishedDate: extractedContent.publishedDate,
-        sourceUrl: extractedContent.resolvedUrl,
+        sourceUrl: (extractedContent.resolvedUrl || '').substring(0, 450), // Ensure within 500 char limit
         resolvedUrl: extractedContent.resolvedUrl,
         images: extractedContent.images,
         readingTime: aiResult.readingTime || Math.ceil(extractedContent.wordCount / 200),
@@ -652,7 +662,7 @@ RESPOND WITH VALID JSON ONLY:
       location: 'Global',
       author: extractedContent.author,
       publishedDate: extractedContent.publishedDate,
-      sourceUrl: extractedContent.resolvedUrl,
+      sourceUrl: (extractedContent.resolvedUrl || '').substring(0, 450), // Ensure within 500 char limit
       resolvedUrl: extractedContent.resolvedUrl,
       images: extractedContent.images,
       readingTime: Math.ceil(extractedContent.wordCount / 200),

@@ -32,6 +32,7 @@ interface ExtractedContent {
     language?: string;
     category?: string;
     sourceUrl?: string;
+    rssLink?: string; // Keep original RSS link for reference
     resolvedUrl?: string;
   };
 }
@@ -70,15 +71,15 @@ export default class AIContentExtractor {
     } else {
       this.genAI = new GoogleGenerativeAI(apiKey);
       this.model = this.genAI.getGenerativeModel({ 
-        model: 'gemini-pro',
+        model: 'gemini-2.0-flash-exp',
         generationConfig: {
           temperature: 0.1,
-          topK: 1,
-          topP: 0.8,
+          topK: 40,
+          topP: 0.95,
           maxOutputTokens: 8192,
         }
       });
-      this.strapi.log.info('✅ Enhanced AI Content Extractor initialized with gemini-pro');
+      this.strapi.log.info('✅ Enhanced AI Content Extractor initialized with gemini-2.0-flash-exp');
     }
   }
 
@@ -110,23 +111,47 @@ export default class AIContentExtractor {
 
       // Step 1: Resolve the URL from RSS link
       this.strapi.log.info(`🔗 [AI-EXTRACTOR] Step 1/5: Resolving URL for "${articleTitle}"`);
+      this.strapi.log.info(`📍 [AI-EXTRACTOR] Original RSS Link: ${rssItem.link}`);
       const resolvedUrl = await this.resolveUrl(rssItem.link);
-      this.strapi.log.info(`✅ [AI-EXTRACTOR] URL resolved: ${resolvedUrl}`);
+      this.strapi.log.info(`✅ [AI-EXTRACTOR] URL resolved successfully`);
+      this.strapi.log.info(`🎯 [AI-EXTRACTOR] Resolved URL: ${resolvedUrl}`);
+      this.strapi.log.info(`🔄 [AI-EXTRACTOR] URL Resolution: ${rssItem.link} → ${resolvedUrl}`);
 
       // Step 2: Extract full HTML content from resolved URL
-      this.strapi.log.info(`📄 [AI-EXTRACTOR] Step 2/5: Extracting HTML content`);
+      this.strapi.log.info(`📄 [AI-EXTRACTOR] Step 2/5: Extracting HTML content from resolved URL`);
       const htmlContent = await this.extractHtmlContent(resolvedUrl);
-      this.strapi.log.info(`✅ [AI-EXTRACTOR] HTML content extracted (${htmlContent.length} characters)`);
+      this.strapi.log.info(`✅ [AI-EXTRACTOR] HTML content extracted successfully`);
+      this.strapi.log.info(`📊 [AI-EXTRACTOR] HTML Content Stats: ${htmlContent.length} characters`);
+      this.strapi.log.debug(`🔍 [AI-EXTRACTOR] HTML Content Preview: ${htmlContent.substring(0, 500)}...`);
 
       // Step 3: Use Readability to get clean article content
-      this.strapi.log.info(`📖 [AI-EXTRACTOR] Step 3/5: Processing readable content`);
+      this.strapi.log.info(`📖 [AI-EXTRACTOR] Step 3/5: Processing readable content with Mozilla Readability`);
       const readableContent = this.extractReadableContent(htmlContent, resolvedUrl);
-      this.strapi.log.info(`✅ [AI-EXTRACTOR] Readable content processed`);
+      this.strapi.log.info(`✅ [AI-EXTRACTOR] Readable content processed successfully`);
+      this.strapi.log.info(`📊 [AI-EXTRACTOR] Extracted Content Stats:`, {
+        title: readableContent.title || 'No title',
+        contentLength: readableContent.textContent?.length || 0,
+        excerptLength: readableContent.excerpt?.length || 0,
+        author: readableContent.byline || 'Unknown',
+        siteName: readableContent.siteName || 'Unknown'
+      });
+      this.strapi.log.debug(`🔍 [AI-EXTRACTOR] Extracted Text Preview: ${(readableContent.textContent || '').substring(0, 500)}...`);
       
       // Step 4: Generate rich content using Gemini AI
-      this.strapi.log.info(`🤖 [AI-EXTRACTOR] Step 4/5: Generating enhanced content with AI`);
+      this.strapi.log.info(`🤖 [AI-EXTRACTOR] Step 4/5: Generating enhanced content with Gemini AI`);
       const aiResult = await this.generateRichContent(readableContent, rssItem, resolvedUrl, category);
-      this.strapi.log.info(`✅ [AI-EXTRACTOR] AI content generation completed`);
+      this.strapi.log.info(`✅ [AI-EXTRACTOR] AI content generation completed successfully`);
+      this.strapi.log.info(`🎯 [AI-EXTRACTOR] AI Generated Content Summary:`, {
+        title: aiResult.title,
+        slug: aiResult.slug,
+        contentLength: aiResult.content.length,
+        excerptLength: aiResult.excerpt.length,
+        location: aiResult.location,
+        tagsCount: aiResult.tags.length,
+        tags: aiResult.tags.join(', '),
+        seoTitle: aiResult.seoTitle,
+        seoDescriptionLength: aiResult.seoDescription?.length || 0
+      });
 
       // Step 5: Final validation and logging
       this.strapi.log.info(`🔍 [AI-EXTRACTOR] Step 5/5: Finalizing extraction results`);
@@ -368,51 +393,72 @@ export default class AIContentExtractor {
     resolvedUrl: string, 
     category?: string
   ): Promise<ExtractedContent> {
-    const maxRetries = 2;
+    const maxRetries = 3;
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        this.strapi.log.info(`🤖 [AI-EXTRACTOR] AI generation attempt ${attempt}/${maxRetries}`);
+        this.strapi.log.info(`🤖 [AI-EXTRACTOR] AI generation attempt ${attempt}/${maxRetries} for: ${resolvedUrl}`);
         
         const prompt = this.buildEnhancedExtractionPrompt(readableContent, rssItem, resolvedUrl, category);
+        this.strapi.log.debug(`📝 [AI-EXTRACTOR] Prompt length: ${prompt.length} characters`);
         
-        // Add timeout for AI generation
+        // Increase timeout for Gemini 2.5 Flash (it can be slower)
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('AI generation timeout')), 30000);
+          setTimeout(() => reject(new Error('AI generation timeout after 120 seconds')), 120000);
         });
+        
+        this.strapi.log.debug(`🔄 [AI-EXTRACTOR] Sending request to Gemini 2.0 Flash Exp...`);
+        this.strapi.log.debug(`📊 [AI-EXTRACTOR] Prompt stats: ${prompt.length} chars`);
         
         const generationPromise = this.model.generateContent(prompt);
         
         const result = await Promise.race([generationPromise, timeoutPromise]);
+        this.strapi.log.debug(`🎯 [AI-EXTRACTOR] AI generation completed, processing response...`);
+        
         const response = await result.response;
         const aiResponse = response.text().trim();
 
-        this.strapi.log.debug(`📝 [AI-EXTRACTOR] AI response received (${aiResponse.length} chars)`);
+        this.strapi.log.info(`📝 [AI-EXTRACTOR] AI response received successfully`);
+        this.strapi.log.info(`📊 [AI-EXTRACTOR] AI Response Stats: ${aiResponse.length} characters`);
+        this.strapi.log.info(`🔍 [AI-EXTRACTOR] AI Output for ${resolvedUrl}:`);
+        this.strapi.log.info(`📄 [AI-EXTRACTOR] Full AI Response: ${aiResponse}`);
+        
+        // Check if response contains safety filters or other issues
+        if (aiResponse.includes('I cannot') || aiResponse.includes('I\'m unable') || aiResponse.includes('safety')) {
+          throw new Error(`AI response blocked by safety filters: ${aiResponse.substring(0, 200)}`);
+        }
 
-        // Validate AI response before parsing
-        if (!aiResponse || aiResponse.length < 100) {
-          throw new Error('AI response too short or empty');
+        // More lenient validation for AI response
+        if (!aiResponse || aiResponse.length < 50) {
+          throw new Error(`AI response too short: ${aiResponse.length} characters`);
         }
 
         // Parse AI response and generate metadata
         const extractedData = await this.parseEnhancedAIResponse(aiResponse, rssItem, resolvedUrl, category);
         
-        this.strapi.log.info(`✅ [AI-EXTRACTOR] AI generation successful on attempt ${attempt}`);
+        this.strapi.log.info(`✅ [AI-EXTRACTOR] AI generation successful on attempt ${attempt} for: ${extractedData.title}`);
         return extractedData;
         
       } catch (error) {
         lastError = error;
-        this.strapi.log.warn(`⚠️ [AI-EXTRACTOR] AI generation attempt ${attempt} failed: ${error.message}`);
+        this.strapi.log.error(`❌ [AI-EXTRACTOR] AI generation attempt ${attempt} failed: ${error.message}`);
+        this.strapi.log.debug(`🔍 [AI-EXTRACTOR] Error details:`, {
+          errorType: error.constructor.name,
+          errorMessage: error.message,
+          stack: error.stack?.split('\n').slice(0, 3).join('\n')
+        });
         
         if (attempt < maxRetries) {
-          this.strapi.log.info(`🔄 [AI-EXTRACTOR] Retrying AI generation in 2 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          const waitTime = attempt * 3000; // Increasing wait time
+          this.strapi.log.info(`🔄 [AI-EXTRACTOR] Retrying AI generation in ${waitTime/1000} seconds...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
         }
       }
     }
 
-    this.strapi.log.error(`❌ [AI-EXTRACTOR] All AI generation attempts failed. Using fallback.`);
+    this.strapi.log.error(`❌ [AI-EXTRACTOR] All AI generation attempts failed. Using fallback content.`);
+    this.strapi.log.error(`🔍 [AI-EXTRACTOR] Final error: ${lastError?.message}`);
     throw new Error(`AI content generation failed after ${maxRetries} attempts: ${lastError?.message}`);
   }
 
@@ -428,59 +474,52 @@ export default class AIContentExtractor {
     const currentDate = new Date().toISOString().split('T')[0];
     const timestamp = new Date().getTime().toString().slice(-6);
     
-    return `You are a professional news content extractor. Extract and enhance the following article content into a structured format.
+    const contentText = readableContent.textContent || readableContent.content || rssItem.content || rssItem.description || '';
+    const cleanContent = contentText.substring(0, 6000); // Reduce content size for better processing
+    
+    const dateStr = currentDate.replace(/-/g, '');
+    
+    return `You are a professional news editor. Transform this article content into a structured news article.
 
-ARTICLE TO PROCESS:
+IMPORTANT: You must respond with ONLY a valid JSON object. No explanations, no markdown, no additional text.
+
+**SOURCE INFORMATION:**
 URL: ${resolvedUrl}
 Original Title: ${rssItem.title || 'N/A'}
 Category: ${category || 'General'}
 
-CONTENT:
-${readableContent.textContent || readableContent.content || rssItem.content || rssItem.description || ''}
+**ARTICLE CONTENT:**
+${cleanContent}
 
-INSTRUCTIONS:
-1. Create a compelling news headline (max 80 characters)
-2. Write a 150-200 character excerpt summarizing the key points
-3. Structure the content as professional HTML with proper paragraphs, headings, and formatting
-4. Generate 5-8 specific, relevant tags (avoid generic terms like "news", "breaking")
-5. Extract the primary location mentioned in the article
-6. Create SEO-optimized title and description
-7. Generate a URL-friendly slug with format: main-keywords-${currentDate.replace(/-/g, '')}-${timestamp}
+**TASK:**
+Create a news article with these exact fields:
 
-REQUIRED OUTPUT FORMAT (JSON ONLY):
+1. title: Engaging headline (20-100 characters)
+2. excerpt: Article summary (100-200 characters)
+3. content: HTML formatted article content with <p> tags (minimum 200 words)
+4. slug: URL-friendly slug with format: keywords-${dateStr}-${timestamp}
+5. seoTitle: SEO optimized title (30-60 characters)
+6. seoDescription: Meta description (120-160 characters)
+7. tags: Array of 3-6 relevant keywords (avoid generic terms like "news", "breaking")
+8. location: Specific location mentioned in article or "Global" if none
+
+**CRITICAL REQUIREMENTS:**
+- Output ONLY the JSON object below
+- No markdown code blocks
+- No explanatory text before or after
+- All string fields must be properly escaped
+- Content must use proper HTML paragraph tags
+
 {
-  "title": "Compelling news headline under 80 characters",
-  "excerpt": "Clear 150-200 character summary of the article",
-  "content": "<p>Professional HTML content with proper structure, minimum 400 words</p>",
-  "slug": "seo-friendly-slug-${currentDate.replace(/-/g, '')}-${timestamp}",
-  "seoTitle": "SEO title 50-60 characters",
-  "seoDescription": "SEO description 150-160 characters",
-  "tags": ["specific-tag1", "specific-tag2", "specific-tag3", "specific-tag4", "specific-tag5"],
-  "location": "City, Country or State",
-  "metadata": {
-    "publishedDate": "${rssItem.pubDate || new Date().toISOString()}",
-    "readingTime": 3,
-    "language": "en",
-    "category": "${category || 'General'}",
-    "sourceUrl": "${rssItem.link || ''}",
-    "resolvedUrl": "${resolvedUrl}",
-    "wordCount": 500
-  }
-}
-
-CRITICAL REQUIREMENTS:
-- Output ONLY valid JSON, no explanations or markdown
-- ALL FIELDS ARE MANDATORY - missing fields will cause rejection
-- title: Must be 10-80 characters, compelling and specific (NOT "Google News", "News", "Article")
-- excerpt: Must be 150-200 characters, clear summary
-- content: Must be minimum 400 words with proper HTML structure
-- slug: Must include timestamp format: main-keywords-${currentDate.replace(/-/g, '')}-${timestamp}
-- seoTitle: Must be 50-60 characters, optimized for search
-- seoDescription: Must be 150-160 characters, compelling meta description
-- tags: Must be 5-8 specific entities/topics (NO generic terms like "news", "breaking", "latest")
-- location: Must be specific city/country if mentioned in article, or "Global" if not location-specific
-- metadata: All nested fields are required and must be accurate
-- Maintain professional journalism standards and factual accuracy`;
+  "title": "Your engaging headline here",
+  "excerpt": "Your article summary here",
+  "content": "<p>Your HTML formatted content here with multiple paragraphs</p><p>Second paragraph here</p>",
+  "slug": "main-keywords-${dateStr}-${timestamp}",
+  "seoTitle": "SEO optimized title",
+  "seoDescription": "Compelling meta description",
+  "tags": ["keyword1", "keyword2", "keyword3", "keyword4"],
+  "location": "City, Country or Global"
+}`;
   }
 
   /**
@@ -499,89 +538,171 @@ CRITICAL REQUIREMENTS:
       let jsonStr = aiResponse.trim();
       this.strapi.log.debug(`📝 [AI-EXTRACTOR] Raw AI response length: ${aiResponse.length} characters`);
       
+      // Multiple cleaning strategies for different response formats
       // Remove markdown code blocks if present
-      if (jsonStr.startsWith('```json')) {
-        jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-        this.strapi.log.debug(`🧹 [AI-EXTRACTOR] Cleaned JSON markdown blocks`);
-      } else if (jsonStr.startsWith('```')) {
-        jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
-        this.strapi.log.debug(`🧹 [AI-EXTRACTOR] Cleaned generic markdown blocks`);
+      if (jsonStr.includes('```json')) {
+        const match = jsonStr.match(/```json\s*([\s\S]*?)\s*```/);
+        if (match) {
+          jsonStr = match[1].trim();
+          this.strapi.log.debug(`🧹 [AI-EXTRACTOR] Extracted JSON from markdown blocks`);
+        }
+      } else if (jsonStr.includes('```')) {
+        const match = jsonStr.match(/```\s*([\s\S]*?)\s*```/);
+        if (match) {
+          jsonStr = match[1].trim();
+          this.strapi.log.debug(`🧹 [AI-EXTRACTOR] Extracted content from generic markdown blocks`);
+        }
       }
 
-      // Find JSON object in the response
-      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+      // Find JSON object in the response (more robust)
+      let jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         jsonStr = jsonMatch[0];
         this.strapi.log.debug(`🎯 [AI-EXTRACTOR] Extracted JSON object from response`);
+      } else {
+        // If no JSON found, try to find it after any text
+        const lines = jsonStr.split('\n');
+        const jsonStartIndex = lines.findIndex(line => line.trim().startsWith('{'));
+        if (jsonStartIndex >= 0) {
+          jsonStr = lines.slice(jsonStartIndex).join('\n');
+          this.strapi.log.debug(`🎯 [AI-EXTRACTOR] Found JSON starting at line ${jsonStartIndex}`);
+        }
       }
+
+      // Additional cleaning for common issues
+      jsonStr = jsonStr
+        .replace(/^\s*Here's the JSON.*?:\s*/i, '') // Remove explanatory text
+        .replace(/^\s*The JSON output.*?:\s*/i, '') // Remove explanatory text
+        .replace(/^\s*JSON:\s*/i, '') // Remove "JSON:" prefix
+        .trim();
+
+      this.strapi.log.debug(`🧹 [AI-EXTRACTOR] Final cleaned JSON length: ${jsonStr.length} characters`);
+      this.strapi.log.debug(`🔍 [AI-EXTRACTOR] First 200 chars of cleaned JSON: ${jsonStr.substring(0, 200)}`);
 
       const parsed = JSON.parse(jsonStr);
       this.strapi.log.info(`✅ [AI-EXTRACTOR] Successfully parsed AI JSON response`);
       
-      // Comprehensive validation of ALL required fields
-      const requiredFields = ['title', 'content', 'excerpt', 'slug', 'seoTitle', 'seoDescription', 'tags', 'location'];
-      const missingFields = requiredFields.filter(field => !parsed[field]);
+      // More lenient validation - only check for critical fields
+      const criticalFields = ['title', 'content'];
+      const missingCriticalFields = criticalFields.filter(field => !parsed[field] || parsed[field].trim().length === 0);
       
-      if (missingFields.length > 0) {
-        this.strapi.log.warn(`⚠️ [AI-EXTRACTOR] Missing required fields: ${missingFields.join(', ')}`);
-        throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+      if (missingCriticalFields.length > 0) {
+        this.strapi.log.error(`❌ [AI-EXTRACTOR] Missing critical fields: ${missingCriticalFields.join(', ')}`);
+        throw new Error(`Missing critical fields: ${missingCriticalFields.join(', ')}`);
       }
 
-      // Validate title quality - reject generic titles
-      const genericTitles = ['Google News', 'News', 'Article', 'Untitled', 'Breaking News', 'Latest'];
-      const isGenericTitle = genericTitles.some(generic => 
-        parsed.title.toLowerCase().includes(generic.toLowerCase())
-      );
-      
-      if (isGenericTitle || parsed.title.length < 10 || parsed.title.length > 80) {
-        this.strapi.log.warn(`⚠️ [AI-EXTRACTOR] Invalid title: "${parsed.title}" (length: ${parsed.title.length})`);
-        throw new Error('AI generated invalid title - too generic, short, or long');
+      // Auto-generate missing optional fields
+      if (!parsed.excerpt || parsed.excerpt.trim().length === 0) {
+        const textContent = parsed.content.replace(/<[^>]*>/g, '');
+        parsed.excerpt = textContent.substring(0, 197) + '...';
+        this.strapi.log.info(`🔧 [AI-EXTRACTOR] Auto-generated excerpt from content`);
       }
 
-      // Validate excerpt length
-      if (parsed.excerpt.length < 100 || parsed.excerpt.length > 250) {
+      if (!parsed.slug || parsed.slug.trim().length === 0) {
+        parsed.slug = this.generateSlugWithTimestamp(parsed.title);
+        this.strapi.log.info(`🔧 [AI-EXTRACTOR] Auto-generated slug: ${parsed.slug}`);
+      }
+
+      if (!parsed.seoTitle || parsed.seoTitle.trim().length === 0) {
+        parsed.seoTitle = parsed.title.length > 60 ? parsed.title.substring(0, 57) + '...' : parsed.title;
+        this.strapi.log.info(`🔧 [AI-EXTRACTOR] Auto-generated SEO title`);
+      }
+
+      if (!parsed.seoDescription || parsed.seoDescription.trim().length === 0) {
+        parsed.seoDescription = parsed.excerpt.length > 160 ? parsed.excerpt.substring(0, 157) + '...' : parsed.excerpt;
+        this.strapi.log.info(`🔧 [AI-EXTRACTOR] Auto-generated SEO description`);
+      }
+
+      if (!Array.isArray(parsed.tags) || parsed.tags.length === 0) {
+        const titleWords = parsed.title.toLowerCase().split(' ').filter(word => word.length > 3);
+        parsed.tags = [category || 'General', ...titleWords.slice(0, 3)];
+        this.strapi.log.info(`🔧 [AI-EXTRACTOR] Auto-generated tags: ${parsed.tags.join(', ')}`);
+      }
+
+      if (!parsed.location || parsed.location.trim().length === 0) {
+        parsed.location = 'Global';
+        this.strapi.log.info(`🔧 [AI-EXTRACTOR] Set default location: Global`);
+      }
+
+      // Validate title quality - be more lenient
+      if (parsed.title.length < 5 || parsed.title.length > 150) {
+        this.strapi.log.warn(`⚠️ [AI-EXTRACTOR] Title length warning: "${parsed.title}" (${parsed.title.length} chars)`);
+        if (parsed.title.length > 150) {
+          parsed.title = parsed.title.substring(0, 147) + '...';
+          this.strapi.log.info(`🔧 [AI-EXTRACTOR] Truncated long title`);
+        }
+      }
+
+      // Validate excerpt length (more lenient)
+      if (parsed.excerpt.length < 50 || parsed.excerpt.length > 300) {
         this.strapi.log.warn(`⚠️ [AI-EXTRACTOR] Invalid excerpt length: ${parsed.excerpt.length} characters`);
-        throw new Error('Excerpt must be 100-250 characters');
+        // Truncate or extend excerpt instead of failing
+        if (parsed.excerpt.length > 300) {
+          parsed.excerpt = parsed.excerpt.substring(0, 297) + '...';
+          this.strapi.log.info(`🔧 [AI-EXTRACTOR] Truncated excerpt to fit requirements`);
+        } else if (parsed.excerpt.length < 50 && parsed.content) {
+          // Generate excerpt from content if too short
+          const textContent = parsed.content.replace(/<[^>]*>/g, '');
+          parsed.excerpt = textContent.substring(0, 197) + '...';
+          this.strapi.log.info(`🔧 [AI-EXTRACTOR] Generated excerpt from content`);
+        }
       }
 
-      // Validate content length
-      if (parsed.content.length < 400) {
+      // Validate content length (more lenient)
+      if (parsed.content.length < 200) {
         this.strapi.log.warn(`⚠️ [AI-EXTRACTOR] Content too short: ${parsed.content.length} characters`);
-        throw new Error('Generated content must be minimum 400 characters');
+        this.strapi.log.info(`🔄 [AI-EXTRACTOR] Proceeding with short content - may use fallback expansion`);
       }
 
-      // Validate SEO fields
-      if (parsed.seoTitle.length < 30 || parsed.seoTitle.length > 70) {
+      // Validate and fix SEO fields
+      if (parsed.seoTitle && (parsed.seoTitle.length < 20 || parsed.seoTitle.length > 80)) {
         this.strapi.log.warn(`⚠️ [AI-EXTRACTOR] Invalid seoTitle length: ${parsed.seoTitle.length} characters`);
-        throw new Error('SEO title must be 30-70 characters');
+        if (parsed.seoTitle.length > 80) {
+          parsed.seoTitle = parsed.seoTitle.substring(0, 77) + '...';
+        } else if (parsed.seoTitle.length < 20) {
+          parsed.seoTitle = parsed.title; // Use main title as fallback
+        }
+        this.strapi.log.info(`🔧 [AI-EXTRACTOR] Fixed seoTitle length`);
       }
 
-      if (parsed.seoDescription.length < 120 || parsed.seoDescription.length > 170) {
+      if (parsed.seoDescription && (parsed.seoDescription.length < 100 || parsed.seoDescription.length > 180)) {
         this.strapi.log.warn(`⚠️ [AI-EXTRACTOR] Invalid seoDescription length: ${parsed.seoDescription.length} characters`);
-        throw new Error('SEO description must be 120-170 characters');
+        if (parsed.seoDescription.length > 180) {
+          parsed.seoDescription = parsed.seoDescription.substring(0, 177) + '...';
+        } else if (parsed.seoDescription.length < 100) {
+          parsed.seoDescription = parsed.excerpt; // Use excerpt as fallback
+        }
+        this.strapi.log.info(`🔧 [AI-EXTRACTOR] Fixed seoDescription length`);
       }
 
-      // Validate tags
-      if (!Array.isArray(parsed.tags) || parsed.tags.length < 3 || parsed.tags.length > 8) {
+      // Validate and fix tags
+      if (!Array.isArray(parsed.tags) || parsed.tags.length < 2) {
         this.strapi.log.warn(`⚠️ [AI-EXTRACTOR] Invalid tags array: ${parsed.tags?.length || 0} tags`);
-        throw new Error('Tags must be an array of 3-8 items');
+        // Generate fallback tags from category and title
+        const titleWords = parsed.title.toLowerCase().split(' ').filter(word => word.length > 4);
+        parsed.tags = [category || 'General', ...titleWords.slice(0, 3)];
+        this.strapi.log.info(`🔧 [AI-EXTRACTOR] Generated fallback tags: ${parsed.tags.join(', ')}`);
       }
 
-      // Check for generic tags
-      const genericTagTerms = ['news', 'breaking', 'latest', 'update', 'story', 'article'];
-      const hasGenericTags = parsed.tags.some(tag => 
-        genericTagTerms.some(generic => tag.toLowerCase().includes(generic))
+      // Filter out very generic tags but keep moderately specific ones
+      const veryGenericTerms = ['news', 'breaking', 'latest', 'update', 'story', 'article'];
+      const filteredTags = parsed.tags.filter(tag => 
+        !veryGenericTerms.some(generic => tag.toLowerCase() === generic.toLowerCase())
       );
       
-      if (hasGenericTags) {
-        this.strapi.log.warn(`⚠️ [AI-EXTRACTOR] Generic tags detected: ${parsed.tags.join(', ')}`);
-        throw new Error('Tags contain generic terms - need specific entities/topics');
+      if (filteredTags.length >= 2) {
+        parsed.tags = filteredTags.slice(0, 8); // Limit to 8 tags
+      } else {
+        // Keep original tags if filtering removes too many
+        parsed.tags = parsed.tags.slice(0, 8);
+        this.strapi.log.info(`🔧 [AI-EXTRACTOR] Kept original tags to maintain minimum count`);
       }
 
-      // Validate location
+      // Validate and fix location
       if (!parsed.location || parsed.location.trim().length < 2) {
         this.strapi.log.warn(`⚠️ [AI-EXTRACTOR] Invalid location: "${parsed.location}"`);
-        throw new Error('Location must be specified (city/country or "Global")');
+        parsed.location = 'Global'; // Use Global as fallback
+        this.strapi.log.info(`🔧 [AI-EXTRACTOR] Set location to 'Global' as fallback`);
       }
       
       // Use AI-generated slug if available, otherwise generate one
@@ -616,7 +737,8 @@ CRITICAL REQUIREMENTS:
           readingTime: parsed.metadata?.readingTime || this.calculateReadingTime(parsed.content),
           language: parsed.metadata?.language || 'en',
           category: category || parsed.metadata?.category || 'General',
-          sourceUrl: resolvedUrl || rssItem.link || '',
+          sourceUrl: (resolvedUrl || '').substring(0, 450), // Truncate to 450 chars to stay within 500 limit
+          rssLink: rssItem.link || '', // Keep original RSS link for reference
           resolvedUrl: resolvedUrl
         }
       };
@@ -743,14 +865,14 @@ CRITICAL REQUIREMENTS:
       tags: tags,
       images: [],
       metadata: {
-        author: rssItem.source || 'Unknown',
-        publishedDate: rssItem.pubDate || new Date().toISOString(),
-        readingTime: this.calculateReadingTime(content),
-        language: 'en',
-        category: category || 'General',
-        sourceUrl: resolvedUrl || rssItem.link || '',
-        resolvedUrl: resolvedUrl
-      }
+          author: rssItem.source || 'Unknown',
+          publishedDate: rssItem.pubDate || new Date().toISOString(),
+          readingTime: this.calculateReadingTime(content),
+          language: 'en',
+          category: category || 'General',
+          sourceUrl: (resolvedUrl || rssItem.link || '').substring(0, 450), // Truncate to 450 chars
+          resolvedUrl: resolvedUrl
+        }
     };
   }
 
@@ -841,7 +963,7 @@ CRITICAL REQUIREMENTS:
         category: categoryEntity.id, // Use category ID
         publishedAt: null, // Save as draft (unpublished)
         publishedDate: new Date(extractedContent.metadata.publishedDate),
-        sourceUrl: extractedContent.metadata.sourceUrl,
+        sourceUrl: (extractedContent.metadata.sourceUrl || '').substring(0, 450), // Ensure within 500 char limit
         isBreaking: false
       };
 

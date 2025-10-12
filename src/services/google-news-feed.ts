@@ -246,20 +246,23 @@ class GoogleNewsFeedService {
 
   /**
    * Get Google News RSS feed URLs for different topics
+   * Using proper Google News category feeds instead of search queries for better category separation
    */
   private getFeedUrls() {
     const feedUrls = {
-      Politics: `${this.baseUrl}/search?q=politics+government+election&hl=en-US&gl=US&ceid=US:en`,
-      Economy: `${this.baseUrl}/search?q=economy+business+finance+market&hl=en-US&gl=US&ceid=US:en`,
-      World: `${this.baseUrl}/search?q=world+global&hl=en-US&gl=US&ceid=US:en`,
-      Security: `${this.baseUrl}/search?q=security+defense+military+terrorism&hl=en-US&gl=US&ceid=US:en`,
-      Law: `${this.baseUrl}/search?q=law+legal+court+justice&hl=en-US&gl=US&ceid=US:en`,
-      Science: `${this.baseUrl}/search?q=science+research+technology&hl=en-US&gl=US&ceid=US:en`,
-      Society: `${this.baseUrl}/search?q=society+social+community+culture&hl=en-US&gl=US&ceid=US:en`,
-      Culture: `${this.baseUrl}/search?q=culture+arts+entertainment+music&hl=en-US&gl=US&ceid=US:en`,
-      Sport: `${this.baseUrl}/search?q=sports+football+basketball+soccer+cricket&hl=en-US&gl=US&ceid=US:en`
+      // Using Google News topic feeds for better category separation
+      Politics: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFZxYUdjU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`, // Politics
+      Economy: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`, // Business
+      World: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`, // World
+      Security: `${this.baseUrl}/search?q=security+defense+military+terrorism+national+security&hl=en-US&gl=US&ceid=US:en&tbm=nws&tbs=qdr:d`, // Security (specific search with recent filter)
+      Law: `${this.baseUrl}/search?q=law+legal+court+justice+supreme+court+lawsuit&hl=en-US&gl=US&ceid=US:en&tbm=nws&tbs=qdr:d`, // Law (specific search with recent filter)
+      Science: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`, // Science
+      Society: `${this.baseUrl}/search?q=society+social+community+culture+education+family&hl=en-US&gl=US&ceid=US:en&tbm=nws&tbs=qdr:d`, // Society (specific search with recent filter)
+      Culture: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNREpxYW5RU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`, // Entertainment
+      Sport: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp1ZEdvU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en` // Sports
     };
 
+    this.strapi.log.debug(`📡 [RSS-FEEDS] Generated category-specific RSS URLs:`, Object.keys(feedUrls));
     return feedUrls;
   }
 
@@ -1832,10 +1835,10 @@ class GoogleNewsFeedService {
     // Ensure sourceUrl is valid and within limits
     let sourceUrl = '';
     if (item.link && typeof item.link === 'string' && item.link.trim()) {
-      sourceUrl = item.link.trim().substring(0, 490);
+      sourceUrl = item.link.trim().substring(0, 450); // Reduced to 450 to stay within 500 limit
     } else {
       this.strapi.log.warn(`   ⚠️  Invalid or missing link for article: ${title}`);
-      sourceUrl = `https://news.google.com/search?q=${encodeURIComponent(title.substring(0, 50))}`;
+      sourceUrl = `https://news.google.com/search?q=${encodeURIComponent(title.substring(0, 50))}`.substring(0, 450);
     }
 
     // Extract tags - prioritize AI-extracted tags
@@ -1891,24 +1894,27 @@ class GoogleNewsFeedService {
   }
 
   /**
-   * Check if article already exists in Strapi
+   * Check if article already exists in Strapi (both published and draft articles)
    */
   async articleExists(sourceUrl: string): Promise<boolean> {
     try {
-      // Only check for published articles, ignore drafts
+      // Check for both published and draft articles to prevent duplicates
       const existingArticles = await this.strapi.entityService.findMany('api::article.article', {
         filters: {
           sourceUrl: {
             $eq: sourceUrl
-          },
-          publishedAt: {
-            $notNull: true
           }
+          // Removed publishedAt filter to check both published and draft articles
         } as any,
         limit: 1
       });
 
-      return existingArticles && existingArticles.length > 0;
+      const exists = existingArticles && existingArticles.length > 0;
+      if (exists) {
+        this.strapi.log.debug(`Article with sourceUrl already exists: ${sourceUrl}`);
+      }
+      
+      return exists;
     } catch (error) {
       this.strapi.log.error('Error checking if article exists:', error);
       return false;
