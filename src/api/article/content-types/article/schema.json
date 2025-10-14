@@ -54,7 +54,7 @@
     "readTime": {
       "type": "integer",
       "required": true,
-      "default": 0,
+      "default": 1,
       "min": 1,
       "max": 60
     },

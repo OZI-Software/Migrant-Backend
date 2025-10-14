@@ -1695,6 +1695,18 @@ class GoogleNewsFeedService {
   private async transformToArticle(item: GoogleNewsItem, category: string = ''): Promise<ParsedNewsItem> {
     const transformStartTime = Date.now();
     
+    // Enhanced logging for Science category debugging
+    if (category === 'Science') {
+      this.strapi.log.info(`🔬 [SCIENCE-DEBUG] Starting transformation for Science article`);
+      this.strapi.log.info(`🔬 [SCIENCE-DEBUG] Original item:`, {
+        title: item.title,
+        link: item.link,
+        pubDate: item.pubDate,
+        hasContent: !!item.content,
+        hasContentSnippet: !!item.contentSnippet
+      });
+    }
+    
     // Clean title by removing publisher names and author names
     const originalTitle = item.title || '';
     const cleanedTitle = this.cleanTitle(originalTitle);
@@ -1702,6 +1714,10 @@ class GoogleNewsFeedService {
     
     this.strapi.log.info(`🔄 Transforming article: "${title}" from category: ${category}`);
     this.strapi.log.debug(`   📝 Title processing: "${originalTitle}" -> "${cleanedTitle}" -> "${title}"`);
+    
+    if (category === 'Science') {
+      this.strapi.log.info(`🔬 [SCIENCE-DEBUG] Title processing completed: "${title}"`);
+    }
     
     // Generate slug manually since auto-generation isn't working
     const slug = this.generateSlug(title);
@@ -1713,7 +1729,23 @@ class GoogleNewsFeedService {
     
     try {
       this.strapi.log.debug(`   🔍 Starting AI-powered content extraction for: ${item.link}`);
+      
+      if (category === 'Science') {
+        this.strapi.log.info(`🔬 [SCIENCE-DEBUG] Starting AI extraction for URL: ${item.link}`);
+      }
+      
       extractionResult = await this.fetchContentWithAI(item.link, item);
+      
+      if (category === 'Science') {
+        this.strapi.log.info(`🔬 [SCIENCE-DEBUG] AI extraction completed:`, {
+          method: extractionResult.extractionMethod,
+          contentLength: extractionResult.content.length,
+          wordCount: extractionResult.wordCount,
+          quality: extractionResult.contentQuality,
+          imageCount: extractionResult.images.length,
+          processingTime: extractionResult.processingTime
+        });
+      }
       
       // If AI extraction was successful, get the structured data
       if (extractionResult.extractionMethod === 'AI (Gemini)') {
@@ -1754,6 +1786,17 @@ class GoogleNewsFeedService {
       
     } catch (error) {
       this.strapi.log.warn(`   ❌ AI/Enhanced extraction failed for ${title}: ${error.message}`);
+      
+      if (category === 'Science') {
+        this.strapi.log.error(`🔬 [SCIENCE-DEBUG] AI extraction failed with error:`, {
+          errorMessage: error.message,
+          errorStack: error.stack,
+          errorName: error.name,
+          url: item.link,
+          title: title
+        });
+      }
+      
       extractionResult = {
         content: rawContent,
         images: [],
@@ -1889,6 +1932,21 @@ class GoogleNewsFeedService {
     };
 
     this.strapi.log.info(`🎉 Article ready for creation: "${finalTitle}" (${result.readTime} min read, ${imageUrls.length} images)`);
+    
+    if (category === 'Science') {
+      this.strapi.log.info(`🔬 [SCIENCE-DEBUG] Transformation completed successfully:`, {
+        title: result.title,
+        slug: result.slug,
+        contentLength: result.content.length,
+        excerptLength: result.excerpt.length,
+        imageCount: result.images.length,
+        tagCount: result.tags.length,
+        readTime: result.readTime,
+        isBreaking: result.isBreaking,
+        hasImageUrl: !!result.imageUrl,
+        processingTime: Date.now() - transformStartTime
+      });
+    }
     
     return result;
   }
@@ -2089,7 +2147,28 @@ class GoogleNewsFeedService {
    */
   async createArticle(articleData: ParsedNewsItem, categoryName: string = 'News'): Promise<any> {
     try {
+      if (categoryName === 'Science') {
+        this.strapi.log.info(`🔬 [SCIENCE-DEBUG] Starting article creation for: "${articleData.title}"`);
+        this.strapi.log.info(`🔬 [SCIENCE-DEBUG] Article data:`, {
+          title: articleData.title,
+          slug: articleData.slug,
+          contentLength: articleData.content.length,
+          hasImageUrl: !!articleData.imageUrl,
+          tagCount: articleData.tags?.length || 0,
+          categoryName: categoryName
+        });
+      }
+      
       const { author, category } = await this.getAuthorAndCategory(categoryName);
+      
+      if (categoryName === 'Science') {
+        this.strapi.log.info(`🔬 [SCIENCE-DEBUG] Author and category resolved:`, {
+          authorId: author.id,
+          authorName: author.name,
+          categoryId: category.id,
+          categoryName: category.name
+        });
+      }
 
       let featuredImage = null;
       
@@ -2150,9 +2229,32 @@ class GoogleNewsFeedService {
       }
 
       this.strapi.log.info(`Article created successfully: ${article.title}${featuredImage ? ' with image' : ''}`);
+      
+      if (categoryName === 'Science') {
+        this.strapi.log.info(`🔬 [SCIENCE-DEBUG] Article creation successful:`, {
+          articleId: article.id,
+          title: article.title,
+          slug: article.slug,
+          categoryId: article.category?.id,
+          authorId: article.author?.id,
+          hasFeaturedImage: !!article.featuredImage,
+          publishedAt: article.publishedAt
+        });
+      }
+      
       return article;
     } catch (error) {
       this.strapi.log.error(`Error creating article: ${error.message}`);
+      
+      if (categoryName === 'Science') {
+        this.strapi.log.error(`🔬 [SCIENCE-DEBUG] Article creation failed:`, {
+          errorMessage: error.message,
+          errorStack: error.stack,
+          errorName: error.name,
+          articleTitle: articleData.title
+        });
+      }
+      
       throw error;
     }
   }

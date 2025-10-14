@@ -427,7 +427,7 @@ export interface ApiArticleArticle extends Struct.CollectionTypeSchema {
         },
         number
       > &
-      Schema.Attribute.DefaultTo<0>;
+      Schema.Attribute.DefaultTo<1>;
     seoDescription: Schema.Attribute.String &
       Schema.Attribute.Required &
       Schema.Attribute.SetMinMaxLength<{

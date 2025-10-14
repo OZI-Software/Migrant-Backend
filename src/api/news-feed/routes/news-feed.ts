@@ -50,5 +50,25 @@ export default {
         auth: false,
       },
     },
+    {
+      method: 'GET',
+      path: '/news-feed/test-strapi-operations',
+      handler: 'test-strapi-operations.testEntityOperations',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false,
+      },
+    },
+    {
+      method: 'GET',
+      path: '/news-feed/check-science-articles',
+      handler: 'test-strapi-operations.checkScienceArticles',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false,
+      },
+    },
   ],
 };
