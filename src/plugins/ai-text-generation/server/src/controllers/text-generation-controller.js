@@ -62,7 +62,7 @@ module.exports = ({ strapi }) => ({
         data: {
           initialized: isInitialized,
           hasApiKey: hasApiKey,
-          model: 'gemini-pro',
+          model: 'gemini-2.0-flash-exp',
           status: isInitialized && hasApiKey ? 'ready' : 'not_ready',
         },
       };

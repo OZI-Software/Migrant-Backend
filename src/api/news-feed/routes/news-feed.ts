@@ -51,6 +51,16 @@ export default {
       },
     },
     {
+      method: 'POST',
+      path: '/news-feed/rss-based-import',
+      handler: 'news-feed.rssBasedImport',
+      config: {
+        policies: [],
+        middlewares: [],
+        auth: false,
+      },
+    },
+    {
       method: 'GET',
       path: '/news-feed/test-strapi-operations',
       handler: 'test-strapi-operations.testEntityOperations',

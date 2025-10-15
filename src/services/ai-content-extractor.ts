@@ -71,7 +71,7 @@ export default class AIContentExtractor {
     } else {
       this.genAI = new GoogleGenerativeAI(apiKey);
       this.model = this.genAI.getGenerativeModel({ 
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.5-flash-lite',
         generationConfig: {
           temperature: 0.1,
           topK: 40,
@@ -79,7 +79,7 @@ export default class AIContentExtractor {
           maxOutputTokens: 8192,
         }
       });
-      this.strapi.log.info('✅ Enhanced AI Content Extractor initialized with gemini-2.0-flash-exp');
+      this.strapi.log.info('✅ Enhanced AI Content Extractor initialized with gemini-2.5-flash-lite');
     }
   }
 
@@ -254,17 +254,44 @@ export default class AIContentExtractor {
     try {
       const startTime = Date.now();
       const response = await axios.get(url, {
-        timeout: 15000,
+        timeout: 60000, // Increased from 30s to 60s for slow-loading pages
         maxContentLength: 10 * 1024 * 1024, // 10MB limit
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-          'Accept-Encoding': 'gzip, deflate',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
           'Connection': 'keep-alive',
-          'Upgrade-Insecure-Requests': '1'
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Cache-Control': 'max-age=0',
+          'DNT': '1',
+          'Referer': 'https://www.google.com/'
+        },
+        validateStatus: function (status) {
+          // Accept any status code less than 500 (including 401, 403, etc.)
+          return status < 500;
         }
       });
+
+      // Check for non-success status codes
+      if (response.status >= 400) {
+        this.strapi.log.warn(`⚠️ [AI-EXTRACTOR] HTTP ${response.status} ${response.statusText} for ${url}`);
+        
+        if (response.status === 401) {
+          this.strapi.log.warn(`🔒 [AI-EXTRACTOR] Unauthorized access - website may require authentication`);
+        } else if (response.status === 403) {
+          this.strapi.log.warn(`🚫 [AI-EXTRACTOR] Forbidden access - website may be blocking bots`);
+        } else if (response.status === 404) {
+          this.strapi.log.warn(`🔍 [AI-EXTRACTOR] Content not found - URL may be invalid or expired`);
+        }
+        
+        // For client errors (4xx), throw an error to skip this article
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
       const extractionTime = Date.now() - startTime;
       const contentLength = response.data.length;
@@ -285,7 +312,8 @@ export default class AIContentExtractor {
         code: error.code,
         status: error.response?.status,
         statusText: error.response?.statusText,
-        timeout: error.code === 'ECONNABORTED'
+        timeout: error.code === 'ECONNABORTED',
+        url: url
       });
       throw new Error(`Failed to fetch content from URL: ${error.message}`);
     }
@@ -318,9 +346,12 @@ export default class AIContentExtractor {
         siteName: article.siteName || 'Unknown'
       });
 
+      // Clean the content before returning
+      const cleanedContent = this.cleanExtractedContent(article.content);
+      
       return {
         title: article.title,
-        content: article.content,
+        content: cleanedContent,
         textContent: article.textContent,
         length: article.length,
         excerpt: article.excerpt,
@@ -337,13 +368,55 @@ export default class AIContentExtractor {
   }
 
   /**
+   * Clean extracted content by removing links and unwanted elements
+   */
+  private cleanExtractedContent(content: string): string {
+    if (!content) return content;
+    
+    const $ = cheerio.load(content);
+    
+    // Remove unwanted elements
+    $('script, style, nav, header, footer, aside, .advertisement, .ads, .menu, .navigation, .sidebar, .related, .comments, .social, .share, .newsletter, .subscription, .popup, .modal, .overlay, .banner, .promo, .widget, .plugin, .embed, iframe, object, embed').remove();
+    
+    // Remove elements with common ad/navigation class names
+    $('[class*="ad"], [class*="menu"], [class*="nav"], [class*="sidebar"], [class*="widget"], [class*="social"], [class*="share"], [class*="related"], [class*="comment"], [class*="footer"], [class*="header"]').remove();
+    
+    // Convert links to plain text but keep their content
+    $('a').each(function() {
+      const linkText = $(this).text().trim();
+      if (linkText && linkText.length > 0) {
+        $(this).replaceWith(linkText);
+      } else {
+        $(this).remove();
+      }
+    });
+    
+    // Remove empty paragraphs and divs
+    $('p, div').each(function() {
+      if ($(this).text().trim().length === 0) {
+        $(this).remove();
+      }
+    });
+    
+    return $.html();
+  }
+
+  /**
    * Fallback HTML parsing when Readability fails
    */
   private fallbackHtmlParsing(htmlContent: string): any {
     const $ = cheerio.load(htmlContent);
     
-    // Remove unwanted elements
-    $('script, style, nav, header, footer, aside, .advertisement, .ads').remove();
+    // Remove unwanted elements more aggressively
+    $('script, style, nav, header, footer, aside, .advertisement, .ads, .menu, .navigation, .sidebar, .related, .comments, .social, .share, .newsletter, .subscription, .popup, .modal, .overlay, .banner, .promo, .widget, .plugin, .embed, iframe, object, embed').remove();
+    
+    // Remove elements with common ad/navigation class names
+    $('[class*="ad"], [class*="menu"], [class*="nav"], [class*="sidebar"], [class*="widget"], [class*="social"], [class*="share"], [class*="related"], [class*="comment"], [class*="footer"], [class*="header"]').remove();
+    
+    // Remove all links but keep their text content
+    $('a').each(function() {
+      $(this).replaceWith($(this).text());
+    });
     
     // Extract title
     const title = $('h1').first().text() || $('title').text() || '';
@@ -373,12 +446,15 @@ export default class AIContentExtractor {
       content = $('p').map((i, el) => $(el).html()).get().join('\n');
     }
     
+    // Clean the content before returning
+    const cleanedContent = this.cleanExtractedContent(content);
+    
     return {
       title: title.trim(),
-      content: content,
-      textContent: $(content).text(),
-      length: $(content).text().length,
-      excerpt: $(content).text().substring(0, 200) + '...',
+      content: cleanedContent,
+      textContent: $(cleanedContent).text(),
+      length: $(cleanedContent).text().length,
+      excerpt: $(cleanedContent).text().substring(0, 200) + '...',
       byline: $('[rel="author"]').text() || $('.author').text() || '',
       siteName: $('meta[property="og:site_name"]').attr('content') || ''
     };
@@ -424,20 +500,43 @@ export default class AIContentExtractor {
         this.strapi.log.info(`🔍 [AI-EXTRACTOR] AI Output for ${resolvedUrl}:`);
         this.strapi.log.info(`📄 [AI-EXTRACTOR] Full AI Response: ${aiResponse}`);
         
-        // Check if response contains safety filters or other issues
-        if (aiResponse.includes('I cannot') || aiResponse.includes('I\'m unable') || aiResponse.includes('safety')) {
+        // Log the first 500 characters for debugging
+        this.strapi.log.info(`🔍 [AI-EXTRACTOR] AI Response Preview (first 500 chars): ${aiResponse.substring(0, 500)}`);
+        
+        // Check if response contains safety filters or other issues (more specific detection)
+        const safetyIndicators = [
+          'I cannot provide',
+          'I\'m unable to',
+          'I can\'t assist',
+          'violates safety guidelines',
+          'against my guidelines',
+          'I cannot generate',
+          'safety policies prevent'
+        ];
+        
+        const hasSafetyBlock = safetyIndicators.some(indicator => 
+          aiResponse.toLowerCase().includes(indicator.toLowerCase())
+        );
+        
+        if (hasSafetyBlock) {
+          this.strapi.log.error(`🚫 [AI-EXTRACTOR] AI response blocked by safety filters: ${aiResponse.substring(0, 200)}`);
           throw new Error(`AI response blocked by safety filters: ${aiResponse.substring(0, 200)}`);
         }
 
         // More lenient validation for AI response
         if (!aiResponse || aiResponse.length < 50) {
+          this.strapi.log.error(`📏 [AI-EXTRACTOR] AI response too short: ${aiResponse.length} characters - "${aiResponse}"`);
           throw new Error(`AI response too short: ${aiResponse.length} characters`);
         }
 
+        this.strapi.log.info(`🔄 [AI-EXTRACTOR] Starting to parse AI response...`);
+        
         // Parse AI response and generate metadata
         const extractedData = await this.parseEnhancedAIResponse(aiResponse, rssItem, resolvedUrl, category);
         
         this.strapi.log.info(`✅ [AI-EXTRACTOR] AI generation successful on attempt ${attempt} for: ${extractedData.title}`);
+        this.strapi.log.info(`📊 [AI-EXTRACTOR] Generated content stats - Title: ${extractedData.title.length} chars, Content: ${extractedData.content.length} chars, Slug: ${extractedData.slug}`);
+        
         return extractedData;
         
       } catch (error) {
@@ -474,14 +573,57 @@ export default class AIContentExtractor {
     const currentDate = new Date().toISOString().split('T')[0];
     const timestamp = new Date().getTime().toString().slice(-6);
     
-    const contentText = readableContent.textContent || readableContent.content || rssItem.content || rssItem.description || '';
-    const cleanContent = contentText.substring(0, 6000); // Reduce content size for better processing
+    // Prioritize extracted readable content over RSS item content (which often contains just URLs)
+    let contentText = '';
+    
+    if (readableContent.textContent && readableContent.textContent.trim().length > 100) {
+      contentText = readableContent.textContent;
+    } else if (readableContent.content && readableContent.content.trim().length > 100) {
+      contentText = readableContent.content;
+    } else {
+      // Only fall back to RSS content if no readable content was extracted
+      contentText = rssItem.content || rssItem.description || '';
+    }
+    
+    // Sanitize content to avoid safety filter triggers
+    let sanitizedContent = contentText
+      .replace(/\b(kill|death|violence|attack|bomb|terror|weapon|gun|shoot|murder|assault)\b/gi, '[content]') // Replace potentially sensitive words
+      .replace(/\b(hate|racist|discrimination|extremist)\b/gi, '[content]') // Replace hate-related terms
+      .replace(/\b(drug|cocaine|heroin|marijuana|cannabis)\b/gi, '[substance]') // Replace drug-related terms
+      .replace(/\b(sex|sexual|porn|nude|naked)\b/gi, '[content]') // Replace adult content terms
+      .replace(/[^\w\s\.,!?;:()\-'"]/g, ' ') // Remove special characters that might cause issues
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+    
+    const cleanContent = sanitizedContent.substring(0, 6000); // Reduce content size for better processing
+    
+    // Log what content we're actually sending to AI for debugging
+    console.log('🔍 Content being sent to AI (first 200 chars):', cleanContent.substring(0, 200));
+    
+    // Validate that we have meaningful content (not just URLs or very short text)
+    if (cleanContent.trim().length < 50) {
+      throw new Error(`Insufficient content extracted. Content length: ${cleanContent.trim().length} characters`);
+    }
+    
+    // Check if content is mostly URLs (common issue with Google News RSS)
+    const urlPattern = /https?:\/\/[^\s]+/g;
+    const urls = cleanContent.match(urlPattern) || [];
+    const urlsLength = urls.join('').length;
+    const contentWithoutUrls = cleanContent.replace(urlPattern, '').trim();
+    
+    if (urlsLength > contentWithoutUrls.length) {
+      throw new Error('Content appears to be mostly URLs rather than article text');
+    }
     
     const dateStr = currentDate.replace(/-/g, '');
     
-    return `You are a professional news editor. Transform this article content into a structured news article.
+    return `You are a professional news editor creating factual, informative news content. Transform this article content into a structured news article focusing on factual reporting and public interest information.
 
-IMPORTANT: You must respond with ONLY a valid JSON object. No explanations, no markdown, no additional text.
+IMPORTANT: 
+- You must respond with ONLY a valid JSON object. No explanations, no markdown, no additional text.
+- Focus on factual, newsworthy information suitable for general audiences.
+- Present information objectively and professionally.
+- Avoid sensationalism and focus on verified facts.
 
 **SOURCE INFORMATION:**
 URL: ${resolvedUrl}
@@ -495,30 +637,47 @@ ${cleanContent}
 Create a news article with these exact fields:
 
 1. title: Engaging headline (20-100 characters)
-2. excerpt: Article summary (100-200 characters)
-3. content: HTML formatted article content with <p> tags (minimum 200 words)
+2. excerpt: Article summary (100-200 characters)  
+3. content: Clean, readable HTML content with <p> tags (minimum 300 words). Remove all links, ads, and navigation elements. Focus on the main story content only.
 4. slug: URL-friendly slug with format: keywords-${dateStr}-${timestamp}
 5. seoTitle: SEO optimized title (30-60 characters)
 6. seoDescription: Meta description (120-160 characters)
 7. tags: Array of 3-6 relevant keywords (avoid generic terms like "news", "breaking")
-8. location: Specific location mentioned in article or "Global" if none
+8. location: CAREFULLY extract the specific location mentioned in the article. Look for cities, countries, regions, or states. If multiple locations, use the primary one. Format as "City, Country" or "State, Country". Only use "Global" if NO specific location is mentioned.
+
+**LOCATION EXTRACTION EXAMPLES:**
+- "New York, United States" (not just "New York")
+- "London, United Kingdom" 
+- "Tokyo, Japan"
+- "California, United States"
+- "Mumbai, India"
+- "Global" (only if no location found)
+
+**CONTENT CLEANING REQUIREMENTS:**
+- Remove all hyperlinks and URLs
+- Remove navigation menus and sidebars
+- Remove advertisements and promotional content
+- Remove "Read more" or "Continue reading" links
+- Focus only on the main article narrative
+- Convert to clean, readable paragraphs
+- Maintain proper sentence structure and flow
 
 **CRITICAL REQUIREMENTS:**
 - Output ONLY the JSON object below
 - No markdown code blocks
 - No explanatory text before or after
 - All string fields must be properly escaped
-- Content must use proper HTML paragraph tags
+- Content must be clean, readable text without links or navigation elements
 
 {
   "title": "Your engaging headline here",
   "excerpt": "Your article summary here",
-  "content": "<p>Your HTML formatted content here with multiple paragraphs</p><p>Second paragraph here</p>",
+  "content": "<p>Clean, readable article content without any links or navigation elements</p><p>Second paragraph with main story content</p><p>Third paragraph continuing the narrative</p>",
   "slug": "main-keywords-${dateStr}-${timestamp}",
   "seoTitle": "SEO optimized title",
   "seoDescription": "Compelling meta description",
   "tags": ["keyword1", "keyword2", "keyword3", "keyword4"],
-  "location": "City, Country or Global"
+  "location": "City, Country"
 }`;
   }
 
@@ -578,9 +737,12 @@ Create a news article with these exact fields:
 
       this.strapi.log.debug(`🧹 [AI-EXTRACTOR] Final cleaned JSON length: ${jsonStr.length} characters`);
       this.strapi.log.debug(`🔍 [AI-EXTRACTOR] First 200 chars of cleaned JSON: ${jsonStr.substring(0, 200)}`);
+      this.strapi.log.info(`📄 [AI-EXTRACTOR] Complete cleaned JSON for parsing: ${jsonStr}`);
+      this.strapi.log.info(`🤖 [AI-EXTRACTOR] Raw AI response (first 2000 chars): ${aiResponse.substring(0, 2000)}`);
 
       const parsed = JSON.parse(jsonStr);
       this.strapi.log.info(`✅ [AI-EXTRACTOR] Successfully parsed AI JSON response`);
+      this.strapi.log.info(`🔍 [AI-EXTRACTOR] Parsed object keys: ${Object.keys(parsed).join(', ')}`);
       
       // More lenient validation - only check for critical fields
       const criticalFields = ['title', 'content'];
@@ -1635,12 +1797,20 @@ Extract the content now:`;
         };
       }
 
-      // Fallback to basic extraction if AI fails
-      this.strapi.log.warn('AI extraction failed, using fallback method');
-      return this.basicFallbackExtraction(rawHtml, sourceUrl);
+      // Don't create article if AI fails
+      this.strapi.log.warn('AI extraction failed - skipping article creation');
+      return {
+        success: false,
+        error: 'AI extraction failed - article creation skipped to maintain quality',
+        processingTime: aiResult.processingTime
+      };
     } catch (error) {
       this.strapi.log.error('Error in extractWithFallback:', error);
-      return this.basicFallbackExtraction(rawHtml, sourceUrl);
+      return {
+        success: false,
+        error: `AI extraction failed: ${error.message} - article creation skipped to maintain quality`,
+        processingTime: Date.now() - Date.now()
+      };
     }
   }
 
