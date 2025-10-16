@@ -2,6 +2,7 @@ import Parser = require('rss-parser');
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import puppeteer from 'puppeteer';
+import { JSDOM } from 'jsdom';
 import AIContentExtractor from './ai-content-extractor';
 
 interface GoogleNewsItem {
@@ -179,53 +180,237 @@ class GoogleNewsFeedService {
   }
 
   /**
-   * Extract HTML content using Puppeteer
+   * Extract HTML content using multi-tier fallback approach
+   * 1. Axios + Cheerio (fast, lightweight, works for most static content)
+   * 2. JSDOM (for content needing basic DOM simulation)
+   * 3. Puppeteer (only for local development or when explicitly enabled)
    */
   private async extractHTMLContent(url: string): Promise<string> {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const enablePuppeteer = process.env.ENABLE_PUPPETEER === 'true';
+    
+    this.strapi.log.info(`🌐 Extracting HTML content from: ${url}`);
+    this.strapi.log.info(`🏭 Environment: ${isProduction ? 'production' : 'development'}`);
+    
+    // Method 1: Axios + Cheerio (Primary - Fast and reliable)
+    try {
+      this.strapi.log.info(`📄 Attempting extraction with Axios + Cheerio...`);
+      const content = await this.extractWithAxiosCheerio(url);
+      if (content && content.length > 100) {
+        this.strapi.log.info(`✅ Axios + Cheerio extraction successful (${content.length} chars)`);
+        return content;
+      }
+      this.strapi.log.warn(`⚠️ Axios + Cheerio returned insufficient content (${content.length} chars)`);
+    } catch (error) {
+      this.strapi.log.warn(`⚠️ Axios + Cheerio extraction failed:`, error.message);
+    }
+
+    // Method 2: JSDOM (Secondary - For basic DOM simulation)
+    try {
+      this.strapi.log.info(`🔧 Attempting extraction with JSDOM...`);
+      const content = await this.extractWithJSDOM(url);
+      if (content && content.length > 100) {
+        this.strapi.log.info(`✅ JSDOM extraction successful (${content.length} chars)`);
+        return content;
+      }
+      this.strapi.log.warn(`⚠️ JSDOM returned insufficient content (${content.length} chars)`);
+    } catch (error) {
+      this.strapi.log.warn(`⚠️ JSDOM extraction failed:`, error.message);
+    }
+
+    // Method 3: Puppeteer (Final fallback - Only in development or when explicitly enabled)
+    if (!isProduction || enablePuppeteer) {
+      try {
+        this.strapi.log.info(`🤖 Attempting extraction with Puppeteer...`);
+        const content = await this.extractWithPuppeteer(url);
+        if (content && content.length > 100) {
+          this.strapi.log.info(`✅ Puppeteer extraction successful (${content.length} chars)`);
+          return content;
+        }
+        this.strapi.log.warn(`⚠️ Puppeteer returned insufficient content (${content.length} chars)`);
+      } catch (error) {
+        this.strapi.log.warn(`⚠️ Puppeteer extraction failed:`, error.message);
+      }
+    } else {
+      this.strapi.log.info(`🚫 Puppeteer disabled in production (set ENABLE_PUPPETEER=true to enable)`);
+    }
+
+    // If all methods fail, return empty string
+    this.strapi.log.error(`❌ All extraction methods failed for: ${url}`);
+    return '';
+  }
+
+  /**
+   * Extract content using Axios + Cheerio (Primary method)
+   */
+  private async extractWithAxiosCheerio(url: string): Promise<string> {
+    const response = await axios.get(url, {
+      timeout: 15000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+      },
+      maxRedirects: 5,
+      validateStatus: (status) => status < 400,
+    });
+
+    const $ = cheerio.load(response.data);
+    
+    // Remove unwanted elements
+    $('script, style, nav, header, footer, aside, .advertisement, .ads, .social-share').remove();
+    
+    // Try to find main content areas in order of preference
+    const contentSelectors = [
+      'article',
+      '[role="main"]',
+      '.article-content',
+      '.post-content',
+      '.entry-content',
+      '.article-body',
+      '.story-body',
+      '.content-body',
+      '.main-content',
+      '.content',
+      'main',
+      '.post',
+      '.story'
+    ];
+    
+    for (const selector of contentSelectors) {
+      const element = $(selector);
+      if (element.length > 0) {
+        const text = element.text().trim();
+        if (text.length > 100) {
+          return text;
+        }
+      }
+    }
+    
+    // Fallback to body content, but clean it up
+    const bodyText = $('body').text().trim();
+    return bodyText;
+  }
+
+  /**
+   * Extract content using JSDOM (Secondary method)
+   */
+  private async extractWithJSDOM(url: string): Promise<string> {
+    const response = await axios.get(url, {
+      timeout: 15000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      maxRedirects: 5,
+    });
+
+    const dom = new JSDOM(response.data, {
+      url: url,
+      referrer: url,
+      contentType: "text/html",
+      includeNodeLocations: false,
+      storageQuota: 10000000
+    });
+
+    const document = dom.window.document;
+    
+    // Remove unwanted elements
+    const unwantedSelectors = ['script', 'style', 'nav', 'header', 'footer', 'aside', '.advertisement', '.ads', '.social-share'];
+    unwantedSelectors.forEach(selector => {
+      const elements = document.querySelectorAll(selector);
+      elements.forEach(el => el.remove());
+    });
+    
+    // Try to find main content areas
+    const contentSelectors = [
+      'article',
+      '[role="main"]',
+      '.article-content',
+      '.post-content',
+      '.entry-content',
+      '.article-body',
+      '.story-body',
+      '.content-body',
+      '.main-content',
+      '.content',
+      'main'
+    ];
+    
+    for (const selector of contentSelectors) {
+      const element = document.querySelector(selector);
+      if (element) {
+        const text = element.textContent?.trim() || '';
+        if (text.length > 100) {
+          return text;
+        }
+      }
+    }
+    
+    // Fallback to body content
+    return document.body.textContent?.trim() || '';
+  }
+
+  /**
+   * Extract content using Puppeteer (Final fallback - development only)
+   */
+  private async extractWithPuppeteer(url: string): Promise<string> {
     let browser;
     try {
       browser = await puppeteer.launch({
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
       });
       
       const page = await browser.newPage();
-      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
       
-      // Navigate to the page
       await page.goto(url, { 
-        waitUntil: 'networkidle2',
-        timeout: 60000 
+        waitUntil: 'networkidle0',
+        timeout: 30000 
       });
       
-      // Extract the main content
-        const content = await page.evaluate(() => {
-          // Try to find main content areas
-          const selectors = [
-            'article',
-            '[role="main"]',
-            '.article-content',
-            '.post-content',
-            '.entry-content',
-            '.content',
-            'main'
-          ];
-          
-          for (const selector of selectors) {
-            const element = document.querySelector(selector);
-            if (element) {
-              return element.textContent || (element as any).innerText || '';
+      const content = await page.evaluate(() => {
+        // Remove unwanted elements
+        const unwantedSelectors = ['script', 'style', 'nav', 'header', 'footer', 'aside', '.advertisement', '.ads', '.social-share'];
+        unwantedSelectors.forEach(selector => {
+          const elements = document.querySelectorAll(selector);
+          elements.forEach(el => el.remove());
+        });
+        
+        // Try to find main content areas
+        const selectors = [
+          'article',
+          '[role="main"]',
+          '.article-content',
+          '.post-content',
+          '.entry-content',
+          '.article-body',
+          '.story-body',
+          '.content-body',
+          '.main-content',
+          '.content',
+          'main'
+        ];
+        
+        for (const selector of selectors) {
+          const element = document.querySelector(selector);
+          if (element) {
+            const text = element.textContent || (element as any).innerText || '';
+            if (text.trim().length > 100) {
+              return text.trim();
             }
           }
-          
-          // Fallback to body content
-          return document.body.textContent || (document.body as any).innerText || '';
-        });
+        }
+        
+        // Fallback to body content
+        return document.body.textContent || (document.body as any).innerText || '';
+      });
       
-      return content;
-    } catch (error) {
-      this.strapi.log.error(`Error extracting HTML content from ${url}:`, error);
-      throw error;
+      return content.trim();
     } finally {
       if (browser) {
         await browser.close();
@@ -259,34 +444,68 @@ class GoogleNewsFeedService {
       this.strapi.log.info(`📄 Content length: ${htmlContent.length} characters`);
       this.strapi.log.info(`🔗 Source URL: ${sourceUrl}`);
       
+      // Handle cases where HTML extraction failed
+      let contentForAI = htmlContent;
+      let contentSnippet = '';
+      
+      if (!htmlContent || htmlContent.length < 50) {
+        this.strapi.log.warn(`⚠️ Insufficient HTML content (${htmlContent.length} chars), using title and URL for AI processing`);
+        contentForAI = `Title: ${originalTitle}\nSource: ${sourceUrl}\n\nNote: Full content extraction failed. Please generate content based on the title and source.`;
+        contentSnippet = `${originalTitle} - Content extraction failed`;
+      } else {
+        contentSnippet = htmlContent.substring(0, 200) + '...';
+      }
+      
       const aiResult = await this.aiContentExtractor.extractFromRSSItem({
          title: originalTitle,
          link: sourceUrl,
-         content: htmlContent,
-         contentSnippet: htmlContent.substring(0, 200) + '...' // Provide a snippet
+         content: contentForAI,
+         contentSnippet: contentSnippet
        }, category);
        
        if (!aiResult.success) {
          this.strapi.log.error(`❌ AI extraction failed for "${originalTitle}": ${aiResult.error}`);
-         this.strapi.log.error(`🚫 Skipping article creation due to AI generation failure`);
          
-         // Throw error to prevent article creation when AI fails
+         // If both HTML extraction and AI failed, create a basic article structure
+         if (!htmlContent || htmlContent.length < 50) {
+           this.strapi.log.warn(`⚠️ Creating basic article structure due to extraction failures`);
+           
+           const basicArticle = {
+             title: originalTitle,
+             slug: this.generateSlugWithTimestamp(originalTitle),
+             excerpt: `${originalTitle} - Full content extraction failed. Please visit the source for complete article.`,
+             content: `<h1>${originalTitle}</h1><p>Content extraction failed for this article. Please visit the <a href="${sourceUrl}" target="_blank">original source</a> to read the full article.</p>`,
+             publishedDate: new Date().toISOString(),
+             sourceUrl: sourceUrl,
+             location: '',
+             seoTitle: originalTitle,
+             seoDescription: `${originalTitle} - Visit source for full content`,
+             tags: [category.toLowerCase(), 'extraction-failed']
+           };
+           
+           this.strapi.log.info(`📝 Created basic article structure for: ${basicArticle.title}`);
+           return basicArticle;
+         }
+         
+         // If we have HTML content but AI failed, throw error
+         this.strapi.log.error(`🚫 Skipping article creation due to AI generation failure`);
          throw new Error(`AI generation failed: ${aiResult.error}`);
        }
        
        this.strapi.log.info(`✅ AI processing successful for: ${aiResult.data.title || originalTitle}`);
        
+       // Use fallback values when AI data is incomplete
        const processedArticle = {
          title: aiResult.data.title || originalTitle,
          slug: this.generateSlugWithTimestamp(aiResult.data.title || originalTitle),
-         excerpt: aiResult.data.excerpt || htmlContent.substring(0, 200) + '...',
-         content: aiResult.data.content || htmlContent,
+         excerpt: aiResult.data.excerpt || (htmlContent.length > 200 ? htmlContent.substring(0, 200) + '...' : `${originalTitle} - Please visit source for full content`),
+         content: aiResult.data.content || (htmlContent.length > 50 ? htmlContent : `<h1>${originalTitle}</h1><p>Please visit the <a href="${sourceUrl}" target="_blank">original source</a> for the full article.</p>`),
          publishedDate: new Date().toISOString(),
          sourceUrl: sourceUrl,
          location: aiResult.data.location || '',
          seoTitle: aiResult.data.seoTitle || aiResult.data.title || originalTitle,
-         seoDescription: aiResult.data.seoDescription || aiResult.data.excerpt || '',
-         tags: aiResult.data.tags || []
+         seoDescription: aiResult.data.seoDescription || aiResult.data.excerpt || `${originalTitle} - News article`,
+         tags: aiResult.data.tags || [category.toLowerCase()]
        };
        
        this.strapi.log.info(`✅ AI processing completed successfully for: ${processedArticle.title}`);
@@ -480,7 +699,7 @@ class GoogleNewsFeedService {
 
             // Step 3: Extract HTML content using Puppeteer
             const htmlContent = await this.extractHTMLContent(resolvedUrl);
-            
+            this.strapi.log.info(`Successfully extracted HTML content for article: ${htmlContent}`);
             if (!htmlContent || htmlContent.trim().length < 100) {
               this.strapi.log.warn(`Insufficient content extracted for: ${item.title}`);
               skipped++;

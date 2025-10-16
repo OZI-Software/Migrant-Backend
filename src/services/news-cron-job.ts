@@ -193,8 +193,8 @@ class NewsCronJobService {
    * Manually trigger a news import job
    */
   async triggerManualImport(
-    categories: string[] = ['World'],
-    maxArticlesPerCategory: number = 10
+    categories: string[] ,
+    maxArticlesPerCategory: number
   ): Promise<any> {
     if (this.isRunning) {
       throw new Error('Another news import job is already running');
