@@ -36,15 +36,16 @@ class GoogleNewsFeedService {
 
   // Limited predefined categories only
   private readonly categoryUrls = {
-  Politics: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFZxYUdjU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
-  Economy: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
+  // Politics: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFZxYUdjU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
+  // Economy: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
   World: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
-  Society: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
-  Science: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
+  // Society: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
+  // Science: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
+  Australia: `${this.baseUrl}/search?q=Australia+news&hl=en-AU&gl=AU&ceid=AU:en`,
   Culture: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNREpxYW5RU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
   Sport: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp1ZEdvU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
-  Security: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
-  Law: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
+  // Security: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
+  // Law: `${this.baseUrl}/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en`,
   };
 
   constructor(strapiInstance?: any) {
@@ -547,17 +548,27 @@ class GoogleNewsFeedService {
     try {
       this.strapi.log.info(`🔄 Creating article: ${articleData.title}`);
       
-      // Find the category
-      const categories = await this.strapi.entityService.findMany('api::category.category', {
+      // Find or create the category
+      let categories = await this.strapi.entityService.findMany('api::category.category', {
         filters: { name: categoryName }
       });
       
+      let category;
       if (!categories || categories.length === 0) {
-        throw new Error(`Category not found: ${categoryName}`);
-      }
-      
-      const category = categories[0];
-      this.strapi.log.info(`📁 Found category: ${category.name} (ID: ${category.id})`);
+        // Create category with proper slug
+        const slug = categoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        category = await this.strapi.entityService.create('api::category.category', {
+          data: {
+            name: categoryName,
+            slug: slug,
+            description: `${categoryName} news articles`
+          }
+        });
+        this.strapi.log.info(`📁 Created new category: ${categoryName} (ID: ${category.id})`);
+      } else {
+         category = categories[0];
+         this.strapi.log.info(`📁 Found existing category: ${category.name} (ID: ${category.id})`);
+       }
       
       // Handle tags - ensure they exist or create them
       let tagIds = [];

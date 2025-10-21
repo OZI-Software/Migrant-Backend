@@ -28,7 +28,7 @@ export default {
       newsCronJobService.startAllJobs();
       
       strapi.log.info('🚀 News cron jobs initialized and started successfully');
-      strapi.log.info('📅 Jobs will run every 2 hours for all categories: Politics, Economy, World, Security, Law, Science, Society, Culture, Sport');
+      strapi.log.info('📅 Jobs will run every 2 hours for categories: World, Australia, Culture, Sport');
       
     } catch (error) {
       strapi.log.error('❌ Failed to initialize news cron jobs:', error);

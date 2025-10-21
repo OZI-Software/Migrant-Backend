@@ -17,7 +17,7 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
         strapi.log.info('Manual news import triggered via API');
         
         const result = await newsCronJobService.triggerManualImport(
-          categories || ['World', 'Politics', 'Economy', 'Science'],
+          categories || ['World', 'Australia', 'Culture', 'Sport'],
           maxArticlesPerCategory || 10
         );
 
@@ -149,7 +149,7 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
      */
     async getCategories(ctx) {
       try {
-        const categories = ['Politics', 'Economy', 'World', 'Security', 'Law', 'Science', 'Society', 'Culture', 'Sport'];
+        const categories = ['World', 'Australia', 'Culture', 'Sport'];
         
         ctx.body = {
           success: true,

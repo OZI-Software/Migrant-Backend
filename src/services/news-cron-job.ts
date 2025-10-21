@@ -19,24 +19,24 @@ class NewsCronJobService {
 
   /**
    * Default cron job configurations
-   * Updated to run every 2 hours for each allowed category as requested
+   * Updated to run every 2 hours for specified categories: World, Australia, Culture, and Sport
    */
   private getDefaultConfigs(): Record<string, CronJobConfig> {
-    // All valid categories that should be fetched (as defined in google-news-feed.ts)
-    const allCategories = ['Politics', 'Economy', 'World', 'Security', 'Law', 'Science', 'Society', 'Culture', 'Sport'];
+    // Only fetch the specified categories as requested by user
+    const allowedCategories = ['World', 'Australia', 'Culture', 'Sport'];
     
     return {
-      // Every 2 hours - PRIMARY JOB - fetch ALL categories as requested by user
-      allCategoriesEvery2Hours: {
+      // Every 2 hours - PRIMARY JOB - fetch specified categories only
+      allowedCategoriesEvery2Hours: {
         schedule: '0 */2 * * *', // Every 2 hours at minute 0
-        categories: allCategories,
+        categories: allowedCategories,
         maxArticlesPerCategory: 8, // Increased for better coverage
         enabled: true
       },
       // Backup job every 6 hours for comprehensive coverage
-      allCategoriesBackup: {
+      allowedCategoriesBackup: {
         schedule: '30 */6 * * *', // Every 6 hours at minute 30 (offset to avoid conflicts)
-        categories: allCategories,
+        categories: allowedCategories,
         maxArticlesPerCategory: 5,
         enabled: true
       }
